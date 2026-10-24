@@ -48,9 +48,6 @@ public final class Macro {
     private static final long WARP_TIMEOUT_MS = 1500;
     private static final long SKIP_MS = 60_000;
     private static final long PATROL_REVISIT_MS = 120_000;
-    private static final long CLOSER_CHECK_MS = 3000;
-    /** A different spot must be at least this many blocks (and 40 %) closer than the current goal before we switch. */
-    private static final double CLOSER_MARGIN = 8.0;
     private static final double PATROL_RADIUS = 10;
     /** Patrol goals further than this are pulled closer (the far end is not loaded yet). */
     private static final double MAX_GOAL_DIST = 90;
@@ -90,7 +87,6 @@ public final class Macro {
 
     private final Map<BlockPos, Long> skipUntil = new HashMap<>();
     private final Map<BlockPos, Long> patrolVisited = new HashMap<>();
-    private long lastCloserCheck;
 
 
     // stuck / warp
@@ -410,42 +406,24 @@ public final class Macro {
         return best;
     }
 
-    /** Penalty (blocks) for a spot whose strings we cannot see right now (far away or already used): it may be stale. */
-    private static final double STALE_PENALTY = 60;
-
-    /** The closest spot; spots we can see are alive right now are preferred over remembered ones. */
+    /**
+     * The nearest spot we can see is alive right now (its strings are in view). Remembered spots we cannot see are not
+     * targets: they may be used up already. We stay on the chosen spot until it is collected or given up.
+     */
     private BlockPos nearestSpot(LocalPlayer p) {
         BlockPos best = null;
         double bd = Double.MAX_VALUE;
         ClientLevel lv = Minecraft.getInstance().level;
+        if (lv == null) return null;
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
-            if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s)) continue;
-            double d = Math.sqrt(s.distToCenterSqr(p.position()));
-            if (lv != null && !SpotScanner.alive(lv, s)) d += STALE_PENALTY;
+            if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s) || !SpotScanner.alive(lv, s)) continue;
+            double d = s.distToCenterSqr(p.position());
             if (d < bd) {
                 bd = d;
                 best = s;
             }
         }
         return best;
-    }
-
-    /**
-     * Every 3 s: is there a spot closer than the one we are heading to (or any spot while we only patrol)? Then go
-     * there instead. The margin keeps it from flip-flopping between two spots at a similar distance.
-     */
-    private boolean closerSpotExists(LocalPlayer p, long now) {
-        if (now - lastCloserCheck < CLOSER_CHECK_MS) return false;
-        lastCloserCheck = now;
-        BlockPos best = nearestSpot(p);
-        if (best == null) return false;
-        if (approaching != null) return false; // already hopping towards a spot
-        if (goal == null || goal.spot() == null) return true; // patrolling and a spot is known
-        if (best.equals(goal.spot())) return false;
-        double now2 = Math.sqrt(best.distToCenterSqr(p.position()));
-        double cur = Math.sqrt(goal.spot().distToCenterSqr(p.position()));
-        // only worth abandoning the route (and the hops already spent on it) for a much closer spot
-        return now2 < cur - Math.max(CLOSER_MARGIN, 0.4 * cur);
     }
 
     /** Known spot sites first (nearest not visited lately), then a grid over the patrol area. */
@@ -531,26 +509,12 @@ public final class Macro {
             steps = planner.result();
             stepIdx = 0;
             planner = null;
-            lastCloserCheck = now;
             Chat.debug("Path: " + steps.size() + " etherwarps (" + (now - planStart) + " ms)");
             stage = Stage.FOLLOW;
             return;
         }
         cancelPlan();
-        if (goal.spot() != null) {
-            // no landing found from which the spot can be clicked: first get close, then plan again from there
-            BlockPos spot = goal.spot();
-            int fails = planFails.merge(spot, 1, Integer::sum);
-            if (fails <= 2) {
-                double r = fails == 1 ? 10 : 5;
-                Chat.debug("No landing found next to " + spot.toShortString() + " - hopping to within " + (int) r + " blocks first.");
-                approaching = spot;
-                goal = Pathfinder.Goal.area(spot.getCenter(), r);
-                beginPlan(mc, p, now);
-                return;
-            }
-        }
-        Chat.debug("No path - skipping this goal for a minute.");
+        Chat.debug("No way to " + describeGoal() + " - giving it up for a minute, going for the next one.");
         skipGoal(now);
         stage = Stage.CHOOSE;
     }
@@ -597,13 +561,6 @@ public final class Macro {
             }
             release(mc);
             enterDig(now);
-            return;
-        }
-        // a clearly closer spot showed up: go there instead
-        if (closerSpotExists(p, now)) {
-            Chat.debug("A closer spot is known - switching to it.");
-            release(mc);
-            stage = Stage.CHOOSE;
             return;
         }
         List<Step> list = steps;

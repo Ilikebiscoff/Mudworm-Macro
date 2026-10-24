@@ -237,7 +237,7 @@ public final class Pathfinder {
         for (double yo : YAW_OFFSETS) {
             if (cancelled) break;
             float yaw = (float) (baseYaw + yo);
-            for (float pitch = -85f; pitch <= 60f; pitch += 1.0f) {
+            for (float pitch = -85f; pitch <= 89f; pitch += 1.0f) {
                 Cand cd = trace(eye, yaw, pitch);
                 if (cd != null) found.add(cd);
             }

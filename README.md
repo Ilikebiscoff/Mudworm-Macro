@@ -30,8 +30,10 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    watched as a second trigger. The server never sends the far side of the island, so when no spot is known the
    macro **patrols**: first every block a spot was ever seen on (saved in `config/mudworm-sites.txt`), then a grid over
    the patrol area.
-2. **Going to the closest spot: etherwarp only, no walking, no route search.** It picks the closest known spot and
-   heads straight for it. Each hop is found by looking at what real look rays do: many yaw/pitch angles around the
+2. **Going to the closest spot: etherwarp only, no walking, no route search.** It picks the nearest spot it can see is
+   alive right now, commits to it, gets it, then picks the next nearest. (Spots it remembers but cannot see are not
+   targets; they may be used up.) If it cannot find a way to a spot it gives that one up for a minute and takes the next.
+   It heads straight for it. Each hop is found by looking at what real look rays do: many yaw/pitch angles around the
    direction of the spot are traced with the same ray the server uses, every ray that ends on a valid etherwarp
    target (never a wall) is a possible hop, and the one whose landing is closest to the spot wins; its angles are then
    refined in small steps. This works on flat ground (where the ray you aim at a block lands several blocks before it)
@@ -42,8 +44,6 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    every click), so clusters of spots cost no extra teleports.
    **Chained hops:** the macro stays crouched between hops and re-aims straight from the landing, so a long trip is
    a quick series of teleports.
-   **Closer spot:** every 3 s it checks whether a known spot is much closer (at least 8 blocks and 40 % nearer)
-   than the one it is heading to (or any spot while patrolling) and switches to it.
    **Stuck:** if you have not moved 1 block in 3 s while it should be moving, it runs `/warp murk` (then waits for the
    teleport and carries on). After 3 warps in a row without finishing a spot it stops. Change with
    `/mudworm stuckcmd <command>`, `stucktime <seconds>` or `stuckwarp` (off).
