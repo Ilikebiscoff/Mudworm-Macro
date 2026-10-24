@@ -343,7 +343,6 @@ public final class Macro {
         moveRef = pos;
         moveRefAt = now;
         avoid.clear();
-        skipUntil.clear();
         aim.reset();
         aim.retarget();
     }
@@ -668,7 +667,7 @@ public final class Macro {
             return;
         }
         cancelPlan();
-        Chat.debug("No way to " + describeGoal() + " - giving it up for a minute, going for the next one.");
+        Chat.debug("No way to " + describeGoal() + " - going for the next one.");
         skipGoal(now);
         stage = Stage.CHOOSE;
     }
@@ -687,7 +686,12 @@ public final class Macro {
 
     private void skipGoal(long now) {
         if (goal == null) return;
-        if (goal.spot() != null) skipUntil.put(goal.spot(), now + SKIP_MS);
+        if (goal.spot() != null) { // no way to this spot: blacklist it for the lobby so we never loop on it
+            SpotScanner.BLACKLIST.add(goal.spot());
+            nukeFirst.remove(goal.spot());
+            nukeLast.remove(goal.spot());
+            Chat.msg("No way to the spot at " + goal.spot().toShortString() + " - blacklisted until the lobby changes.");
+        }
         if (patrolPoint != null) skipUntil.put(patrolPoint, now + SKIP_MS);
     }
 

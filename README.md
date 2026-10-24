@@ -50,6 +50,9 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    walk you off an edge); if it is blocked or makes no progress for 0.7 s it gives up and teleports instead. Change the
    range with `/mudworm scoot <blocks>` (0 = off). One scoot lasts at most 1.5 s (`/mudworm scoottime <seconds>`), and
    when it ends the "not moving for 3 s -> /warp murk" timer starts again from zero.
+   **Unreachable spots:** if no way to a spot can be found, it is blacklisted for the lobby too (red box), so the
+   macro never loops on it, also not after a `/warp murk`. When the live (non-blacklisted) spots drop below the minimum, the
+   lobby refresh below gets a fresh lobby.
    **Lobby refresh:** if the lobby has fewer than 3 live spots (`/mudworm minspots <n>`, 0 = off), once its spots had
    6 s to load, the macro runs `/is`, waits for the island, pauses 3.5 s and runs `/warp murk`, which gives a fresh
    lobby. At least 45 s must have passed since the last lobby switch (`/mudworm refreshcooldown <seconds>`), so it never
@@ -95,7 +98,7 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    the nearest known spot within reach (4.6 blocks), whether or not it is the one being teleported to, so spots on the
    way or next to the target go too. No aiming, no turning the head, no line-of-sight check (walls do not matter). A
    spot counts as collected when its strings vanish or the block breaks. If a spot is still there 2 seconds after the
-   first break, it is **blacklisted for this lobby** (red box). The blacklist is cleared when the lobby or world changes.
+   first break, it is **blacklisted for this lobby** (red box). The blacklist is cleared when the lobby changes (the lobby code on the sidebar), not by `/warp murk`.
 
 ## Requirements
 

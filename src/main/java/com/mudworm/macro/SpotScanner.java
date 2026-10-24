@@ -85,8 +85,9 @@ public final class SpotScanner {
 
     public static void tick(Minecraft mc) {
         ClientLevel level = mc.level;
-        if (level != lastLevel) { // new world: everything we knew is stale
-            reset("world changed");
+        if (level != lastLevel) { // new world object: spots are found again from the entities. The blacklist stays
+            if (!SPOTS.isEmpty()) Chat.log("Spot list cleared: world object changed (blacklist kept until the lobby changes)");
+            SPOTS.clear();
             lastLevel = level;
         }
         if (level == null || mc.player == null) return;
