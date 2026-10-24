@@ -53,6 +53,8 @@ public final class Macro {
     /** Patrol goals further than this are pulled closer (the far end is not loaded yet). */
     private static final double MAX_GOAL_DIST = 90;
     private static final long PLAN_TIMEOUT_MS = 6000;
+    /** No spot in view for this long: run the stuck command (/warp murk) to get somewhere with spots. */
+    private static final long IDLE_WARP_MS = 8000;
     /** A different spot must be at least this many blocks nearer to count (so equal distances do not flip-flop). */
     private static final double SWITCH_MARGIN = 1.0;
     /** A route may end short of the spot; plan again from there at most this many times per spot. */
@@ -109,7 +111,7 @@ public final class Macro {
     private long etherOffUntil, noManaUntil, nextSlotChange;
 
     // digging
-    private long digAt, digSince, lastSwing;
+    private long digAt, digSince, lastSwing, idleSince;
     private int digTries;
     private long lastFloorDrop;
 
@@ -354,6 +356,7 @@ public final class Macro {
             return;
         }
         BlockPos near = spotInReach(mc, p);
+        if (near != null || nearestSpot(p) != null) idleSince = 0;
         if (near != null) { // already close enough to another spot: no hop needed
             goal = Pathfinder.Goal.spot(near);
             patrolPoint = null;
@@ -367,17 +370,16 @@ public final class Macro {
             beginPlan(mc, p, now);
             return;
         }
-        BlockPos pp = nextPatrolPoint(p, now);
-        if (pp == null) {
-            status = "No spots and nowhere to patrol";
-            return;
+        // No spot selected: do not teleport. Wait until one shows up (the scan finds every spot in view).
+        terrainWait = true; // standing still is expected, not "stuck"
+        status = "Waiting for a mudworm spot";
+        goal = null;
+        patrolPoint = null;
+        if (idleSince == 0) idleSince = now;
+        if (Config.unstuckWarp && now - idleSince > IDLE_WARP_MS) {
+            idleSince = 0;
+            stuckWarp(mc, p, now, "No spot in view for " + IDLE_WARP_MS / 1000 + " s");
         }
-        patrolPoint = pp;
-        Vec3 c = pp.getCenter();
-        Vec3 me = p.position();
-        if (c.distanceTo(me) > MAX_GOAL_DIST) c = me.add(c.subtract(me).normalize().scale(MAX_GOAL_DIST));
-        goal = Pathfinder.Goal.area(c, PATROL_RADIUS);
-        beginPlan(mc, p, now);
     }
 
     /**
