@@ -58,7 +58,7 @@ public final class Pathfinder {
     private static final double MIN_PROGRESS = 1.5;
     private static final int MAX_SIDEWAYS = 1;
     private static final double[] YAW_OFFSETS = {0, 2, -2, 4, -4, 7, -7, 11, -11, 16, -16, 24, -24, 36, -36, 55, -55, 80, -80, 120, -120, 180};
-    private static final int KEEP = 6;
+    private static final int KEEP = 8;
 
     private final WorldCache.Reader c;
     private final Goal goal;
@@ -139,15 +139,15 @@ public final class Pathfinder {
                 Cand pick = null;
                 boolean side = false;
                 for (Cand cd : best) {
+                    if (!awayFromRoute(cd.target().above(), steps, 9)) continue; // never go back to where we were
                     if (cd.score() <= here - MIN_PROGRESS) {
                         pick = cd;
                         break;
                     }
                 }
-                if (pick == null && goal.spot() != null && sideways < MAX_SIDEWAYS) { // nothing gets closer: one hop sideways to get around it
+                if (pick == null && goal.spot() != null && sideways < MAX_SIDEWAYS) { // nothing gets closer: one real hop sideways
                     for (Cand cd : best) {
-                        BlockPos land = cd.target().above();
-                        if (farFromRoute(land, steps) && cd.score() < here + 8) {
+                        if (awayFromRoute(cd.target().above(), steps, 64) && cd.score() < here + 8) {
                             pick = cd;
                             side = true;
                             break;
@@ -166,6 +166,10 @@ public final class Pathfinder {
                 eye = Etherwarp.eyeAt(land);
                 here = score(land);
                 reached = isGoal(land);
+            }
+            if (!reached && !steps.isEmpty() && here > score(startFeet) - MIN_PROGRESS) {
+                steps.clear(); // the route does not end any closer than it started: not worth the mana
+                endNote = " (route made no progress)";
             }
             result = steps;
             elapsedMs = (System.nanoTime() - t0) / 1_000_000;
@@ -217,9 +221,10 @@ public final class Pathfinder {
         return Math.max(0, Math.sqrt(dx * dx + dy * dy + dz * dz) - goal.radius());
     }
 
-    private boolean farFromRoute(BlockPos land, List<Step> steps) {
-        if (land.distSqr(startFeet) < 9) return false;
-        for (Step s : steps) if (land.distSqr(s.feet()) < 9) return false;
+    /** The landing is at least sqrt({@code minDistSqr}) blocks from the start and from every earlier landing. */
+    private boolean awayFromRoute(BlockPos land, List<Step> steps, int minDistSqr) {
+        if (land.distSqr(startFeet) < minDistSqr) return false;
+        for (Step s : steps) if (land.distSqr(s.feet()) < minDistSqr) return false;
         return true;
     }
 
@@ -238,22 +243,24 @@ public final class Pathfinder {
             }
         }
         found.sort((a, b) -> Double.compare(a.score(), b.score()));
-        // distinct landings only, then refine the best few in small angle steps
+        // the best distinct landings whose aim cone is safe (the very best ones graze edges and are usually not)
         List<Cand> top = new ArrayList<>();
+        java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+        int tested = 0;
         for (Cand cd : found) {
-            boolean dup = false;
-            for (Cand t : top) if (t.target().equals(cd.target())) dup = true;
-            if (!dup) top.add(cd);
+            if (!seen.add(cd.target())) continue;
+            if (++tested > 700) break;
+            if (!robust(eye, cd)) continue;
+            top.add(cd);
             if (top.size() >= KEEP) break;
         }
-        List<Cand> refined = new ArrayList<>();
-        for (Cand cd : top) refined.add(refine(eye, cd));
-        refined.sort((a, b) -> Double.compare(a.score(), b.score()));
+        // refine them in small mouse steps (keep the refined aim only if it is still safe)
         List<Cand> out = new ArrayList<>();
-        for (Cand cd : refined) {
-            if (!robust(eye, cd)) continue;
-            out.add(cd);
+        for (Cand cd : top) {
+            Cand r = refine(eye, cd);
+            out.add(r != cd && robust(eye, r) ? r : cd);
         }
+        out.sort((a, b) -> Double.compare(a.score(), b.score()));
         return out;
     }
 
