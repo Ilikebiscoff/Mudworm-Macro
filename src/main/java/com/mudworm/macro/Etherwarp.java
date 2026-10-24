@@ -1,13 +1,13 @@
 package com.mudworm.macro;
 
+import com.mudworm.macro.path.Cell;
+import com.mudworm.macro.path.Cells;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.component.CustomData;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.AbstractCauldronBlock;
 import net.minecraft.world.level.block.AnvilBlock;
-import net.minecraft.world.level.block.BasePressurePlateBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.ButtonBlock;
 import net.minecraft.world.level.block.CraftingTableBlock;
@@ -17,7 +17,6 @@ import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.NoteBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
-import net.minecraft.world.level.block.TripWireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -68,7 +67,7 @@ public final class Etherwarp {
     // ---- block rules ----------------------------------------------------------------------------------------
 
     /** Right-clicking these uses the block instead of the item, so they are never targets. */
-    static boolean interactable(BlockState s) {
+    public static boolean interactable(BlockState s) {
         Block b = s.getBlock();
         return s.hasBlockEntity() || b instanceof DoorBlock || b instanceof TrapDoorBlock || b instanceof FenceGateBlock
                 || b instanceof ButtonBlock || b instanceof LeverBlock || b instanceof CraftingTableBlock
@@ -76,32 +75,20 @@ public final class Etherwarp {
                 || b instanceof DiodeBlock;
     }
 
-    /** True when the etherwarp ray goes through this cell. */
-    static boolean rayPasses(Level level, BlockPos pos, BlockState s) {
-        if (s.isAir()) return true;
-        if (Config.strictRay) return false;
-        if (!s.getFluidState().isEmpty() || s.hasBlockEntity()) return false; // fluids, signs, banners, heads
-        Block b = s.getBlock();
-        if (b instanceof BasePressurePlateBlock || b instanceof TripWireBlock || b instanceof ButtonBlock) return false;
-        return s.getCollisionShape(level, pos).isEmpty(); // grass, flowers, ferns...
-    }
-
-    /** A block every model agrees you can etherwarp onto. */
-    public static boolean validTarget(Level level, BlockPos pos) {
-        if (!level.isLoaded(pos)) return false;
-        BlockState s = level.getBlockState(pos);
-        if (s.isAir() || !s.getFluidState().isEmpty() || interactable(s)) return false;
-        if (!s.isCollisionShapeFullBlock(level, pos)) return false;
-        return level.getBlockState(pos.above()).isAir() && level.getBlockState(pos.above(2)).isAir();
+    /** A block every model agrees you can etherwarp onto: full non-interactable cube, literal air in the two cells above. */
+    public static boolean validTarget(Cells c, int x, int y, int z) {
+        return (c.at(x, y, z) & Cell.TARGET) != 0 && (c.at(x, y + 1, z) & Cell.AIR) != 0
+                && (c.at(x, y + 2, z) & Cell.AIR) != 0;
     }
 
     // ---- ray ------------------------------------------------------------------------------------------------
 
     /**
      * Exact voxel walk (Amanatides-Woo DDA) from {@code from} along unit {@code dir}: the first cell the ray stops
-     * at within {@code maxDist}, or null (nothing hit, or an unloaded cell on the way).
+     * at within {@code maxDist}, or null (nothing hit, or an unknown cell on the way). {@code airOnly}: only air lets
+     * the ray through (used for "can I see the spot").
      */
-    static BlockPos firstStop(Level level, Vec3 from, Vec3 dir, double maxDist) {
+    public static BlockPos firstStop(Cells c, Vec3 from, Vec3 dir, double maxDist, boolean airOnly) {
         int x = (int) Math.floor(from.x), y = (int) Math.floor(from.y), z = (int) Math.floor(from.z);
         int sx = dir.x > 0 ? 1 : dir.x < 0 ? -1 : 0;
         int sy = dir.y > 0 ? 1 : dir.y < 0 ? -1 : 0;
@@ -112,7 +99,7 @@ public final class Etherwarp {
         double tx = sx > 0 ? (x + 1 - from.x) * dx : sx < 0 ? (from.x - x) * dx : Double.POSITIVE_INFINITY;
         double ty = sy > 0 ? (y + 1 - from.y) * dy : sy < 0 ? (from.y - y) * dy : Double.POSITIVE_INFINITY;
         double tz = sz > 0 ? (z + 1 - from.z) * dz : sz < 0 ? (from.z - z) * dz : Double.POSITIVE_INFINITY;
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        boolean strict = airOnly || Config.strictRay;
         while (true) {
             double t;
             if (tx < ty && tx < tz) {
@@ -129,24 +116,25 @@ public final class Etherwarp {
                 tz += dz;
             }
             if (t > maxDist) return null;
-            m.set(x, y, z);
-            if (level.isOutsideBuildHeight(m) || !level.isLoaded(m)) return null;
-            if (!rayPasses(level, m, level.getBlockState(m))) return m.immutable();
+            short f = c.at(x, y, z);
+            if ((f & Cell.LOADED) == 0) return null;
+            boolean passes = (f & Cell.AIR) != 0 || (!strict && (f & Cell.RAYPASS) != 0);
+            if (!passes) return new BlockPos(x, y, z);
         }
     }
 
     /** Where an etherwarp with these exact angles from {@code eye} lands its target, or null if it would fail. */
-    public static BlockPos predict(Level level, Vec3 eye, float yaw, float pitch, double range) {
-        BlockPos hit = firstStop(level, eye, dir(yaw, pitch), range);
-        return hit != null && validTarget(level, hit) ? hit : null;
+    public static BlockPos predict(Cells c, Vec3 eye, float yaw, float pitch, double range) {
+        BlockPos hit = firstStop(c, eye, dir(yaw, pitch), range, false);
+        return hit != null && validTarget(c, hit.getX(), hit.getY(), hit.getZ()) ? hit : null;
     }
 
     /** True when the centre ray and every ray in the jitter cone stop at {@code target}. */
-    public static boolean robust(Level level, Vec3 eye, float yaw, float pitch, BlockPos target, double range) {
+    public static boolean robust(Cells c, Vec3 eye, float yaw, float pitch, BlockPos target, double range) {
         float j = (float) Config.jitterDeg;
         float[][] offs = {{0, 0}, {j, 0}, {-j, 0}, {0, j}, {0, -j}};
         for (float[] o : offs) {
-            BlockPos hit = firstStop(level, eye, dir(yaw + o[0], pitch + o[1]), range);
+            BlockPos hit = firstStop(c, eye, dir(yaw + o[0], pitch + o[1]), range, false);
             if (!target.equals(hit)) return false;
         }
         return true;
@@ -156,15 +144,17 @@ public final class Etherwarp {
      * Finds look angles from {@code eye} that robustly etherwarp onto {@code target}, or null. Tries the top face
      * centre first (lands cleanly) and then the block centre (for blocks seen from the side).
      */
-    public static Shot shot(Level level, Vec3 eye, BlockPos target, double range) {
-        if (eye.distanceTo(target.getCenter()) > range || !validTarget(level, target)) return null;
+    public static Shot shot(Cells c, Vec3 eye, BlockPos target, double range) {
+        if (eye.distanceTo(target.getCenter()) > range || !validTarget(c, target.getX(), target.getY(), target.getZ())) {
+            return null;
+        }
         Vec3[] aims = {
                 new Vec3(target.getX() + 0.5, target.getY() + 0.97, target.getZ() + 0.5),
                 target.getCenter()
         };
         for (Vec3 a : aims) {
             float[] ang = angles(eye, a);
-            if (robust(level, eye, ang[0], ang[1], target, range)) return new Shot(target, ang[0], ang[1]);
+            if (robust(c, eye, ang[0], ang[1], target, range)) return new Shot(target, ang[0], ang[1]);
         }
         return null;
     }

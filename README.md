@@ -30,12 +30,22 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    watched as a second trigger. The server never sends the far side of the island, so when no spot is known the
    macro **patrols**: first every block a spot was ever seen on (saved in `config/mudworm-sites.txt`), then a grid over
    the patrol area.
-2. **Pathfinding.** One A* search over standing cells with two kinds of moves:
-   - **walking**: 8 directions, 1-block step-ups (jump), drops of up to 3 blocks, a small penalty next to walls;
+2. **Pathfinding.** One A* search over standing cells with two kinds of moves. It runs on its **own thread** over a
+   terrain snapshot that the game thread fills 3 ms per tick (nearest chunks first), so planning never lags the game:
+   - **walking**: 8 directions, 1-block step-ups (jump), drops of up to 3 blocks, a small penalty next to walls,
+     and **through azalea leaves** (they cost extra and are broken on the way);
    - **etherwarp**: from the start, from every landing, and from walking cells on a 4×4 grid, to landing blocks in range.
    One etherwarp costs as much as walking `etherCost` blocks (default 10), so short trips are walked and long ones
    are teleported. The goal is any cell from which the spot block is in reach (4 blocks) with a clear view of one of
-   its faces. Planning runs 5 ms per tick, so the game never freezes.
+   its faces.
+   **Smooth walking:** straight stretches are merged into one segment, the camera starts turning into the next
+   segment before a corner, W stays held (no stop-and-go), and it sprints on long straights.
+   **Closer spot:** every 3 s it checks whether a known spot is clearly closer than the one it is heading to (or
+   any spot while patrolling) and switches to it.
+   **Leaves:** azalea leaves on the path (or right in front of you) are broken by holding left-click on them.
+   **Stuck:** if you have not moved 1 block in 3 s while it should be moving, it runs `/warp murk` (then waits for the
+   teleport and carries on). After 3 warps in a row without finishing a spot it stops. Change with
+   `/mudworm stuckcmd <command>`, `stucktime <seconds>` or `stuckwarp` (off).
 3. **Etherwarp, never through walls.** The server takes the *first* block the look ray stops at as the target, so a
    wall in the way becomes the target. The mod makes sure that first block is always the planned one:
    - **Target:** a full solid cube that is not interactable (no chest, door, trapdoor, gate, crafting table…) with
@@ -91,6 +101,8 @@ Boxes: green = spot, yellow = current goal, cyan line = walking path, magenta li
 | `/mudworm esp`, `hud`, `debug` | Boxes, status panel, debug chat lines |
 | `/mudworm walkonly` | Never etherwarp |
 | `/mudworm strict` | Only air lets the etherwarp ray through |
+| `/mudworm leaves` | Break azalea leaves in the way (on by default) |
+| `/mudworm stuckwarp`, `stuckcmd <command>`, `stucktime <seconds>` | Warp when not moving (default `/warp murk` after 3 s) |
 | `/mudworm failsafe` | Stop when something else teleports you (on by default) |
 | `/mudworm range <10-61>` | Base etherwarp range (tuners from the item are added) |
 | `/mudworm ethercost <blocks>` | How many walked blocks one etherwarp is worth (lower = more teleports) |
@@ -114,8 +126,9 @@ All settings, including `jitterDeg`, `rangeMargin`, `reach`, `patrolStep` and `s
 | `MudwormMod` | Entry point: tick, chat, key, commands, HUD, boxes |
 | `SpotScanner` | Finds spots (entity scan + particles), remembers sites |
 | `Etherwarp` | Etherwarp rules: item, range, target/ray block rules, DDA, aim cone, look angles |
-| `path/Pathfinder` | Time-sliced A* with walk and etherwarp moves |
-| `path/LandingIndex` | Per-chunk cache of valid etherwarp targets |
+| `path/Pathfinder` | A* with walk and etherwarp moves, runs on the planner thread, merges straight stretches |
+| `path/WorldCache` | Terrain snapshot (one `Cell` per block) filled on the game thread, read by the planner |
+| `path/Cell` | Block facts (solid, air, fluid, hazard, leaves, etherwarp target…) packed in a short |
 | `Macro` | State machine: choose → plan → follow → warp → click |
 | `HumanAim` | Frame-rate camera movement in whole mouse pixels (from Nablzz Addons), with an exact mode for etherwarps |
 | `Hud`, `Chat`, `Config` | Status panel, messages, settings |

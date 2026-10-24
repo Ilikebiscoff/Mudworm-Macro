@@ -38,6 +38,15 @@ public final class Config {
     /** Stop the macro when something teleports the player that was not our own etherwarp (staff check / warp). */
     public static boolean stopOnForeignTeleport = true;
 
+    /** No real movement for this many seconds while the macro should be moving: run {@link #stuckCommand}. */
+    public static boolean unstuckWarp = true;
+    public static int stuckSeconds = 3;
+    public static String stuckCommand = "warp murk";
+    /** Walk through azalea leaves by breaking them. */
+    public static boolean breakLeaves = true;
+    /** Terrain snapshot radius in chunks around the player. */
+    public static int cacheChunks = 7;
+
     /** Patrol area (x/z box). Default: Moonglade Marsh, from SkyHanni's island map (approximate). */
     public static int areaMinX = -708, areaMaxX = -603, areaMinZ = -46, areaMaxZ = 77;
     /** Distance between patrol points. */
@@ -67,6 +76,11 @@ public final class Config {
         hud = b(p, "hud", hud);
         debug = b(p, "debug", debug);
         stopOnForeignTeleport = b(p, "stopOnForeignTeleport", stopOnForeignTeleport);
+        unstuckWarp = b(p, "unstuckWarp", unstuckWarp);
+        stuckSeconds = Math.max(1, i(p, "stuckSeconds", stuckSeconds));
+        stuckCommand = p.getProperty("stuckCommand", stuckCommand).trim();
+        breakLeaves = b(p, "breakLeaves", breakLeaves);
+        cacheChunks = Math.max(2, Math.min(12, i(p, "cacheChunks", cacheChunks)));
         areaMinX = i(p, "areaMinX", areaMinX);
         areaMaxX = i(p, "areaMaxX", areaMaxX);
         areaMinZ = i(p, "areaMinZ", areaMinZ);
@@ -89,6 +103,11 @@ public final class Config {
         p.setProperty("hud", "" + hud);
         p.setProperty("debug", "" + debug);
         p.setProperty("stopOnForeignTeleport", "" + stopOnForeignTeleport);
+        p.setProperty("unstuckWarp", "" + unstuckWarp);
+        p.setProperty("stuckSeconds", "" + stuckSeconds);
+        p.setProperty("stuckCommand", stuckCommand);
+        p.setProperty("breakLeaves", "" + breakLeaves);
+        p.setProperty("cacheChunks", "" + cacheChunks);
         p.setProperty("areaMinX", "" + areaMinX);
         p.setProperty("areaMaxX", "" + areaMaxX);
         p.setProperty("areaMinZ", "" + areaMinZ);

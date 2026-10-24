@@ -3,6 +3,7 @@ package com.mudworm.macro;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mudworm.macro.path.Pathfinder;
@@ -77,6 +78,22 @@ public final class MudwormMod implements ClientModInitializer {
             root.then(lit("debug").executes(c -> flag("Debug messages", Config.debug = !Config.debug)));
             root.then(lit("walkonly").executes(c -> flag("Walk only (no etherwarp)", Config.walkOnly = !Config.walkOnly)));
             root.then(lit("strict").executes(c -> flag("Strict ray (only air lets the etherwarp through)", Config.strictRay = !Config.strictRay)));
+            root.then(lit("leaves").executes(c -> flag("Break azalea leaves in the way", Config.breakLeaves = !Config.breakLeaves)));
+            root.then(lit("stuckwarp").executes(c -> flag("Warp when stuck", Config.unstuckWarp = !Config.unstuckWarp)));
+            root.then(lit("stuckcmd").then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("command",
+                    StringArgumentType.greedyString()).executes(c -> {
+                Config.stuckCommand = StringArgumentType.getString(c, "command").trim();
+                Config.save();
+                Chat.msg("When stuck for " + Config.stuckSeconds + " s it runs: /" + Config.stuckCommand);
+                return 1;
+            })));
+            root.then(lit("stucktime").then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("seconds",
+                    IntegerArgumentType.integer(1, 60)).executes(c -> {
+                Config.stuckSeconds = IntegerArgumentType.getInteger(c, "seconds");
+                Config.save();
+                Chat.msg("Stuck timer: " + Config.stuckSeconds + " s.");
+                return 1;
+            })));
             root.then(lit("failsafe").executes(c -> flag("Stop when teleported by something else", Config.stopOnForeignTeleport = !Config.stopOnForeignTeleport)));
             root.then(lit("range").then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("blocks",
                     IntegerArgumentType.integer(10, 61)).executes(c -> {
@@ -149,7 +166,8 @@ public final class MudwormMod implements ClientModInitializer {
         for (String s : List.of(
                 "/mudworm start | stop | toggle (key K)",
                 "/mudworm status | spots",
-                "/mudworm esp | hud | debug | walkonly | strict | failsafe",
+                "/mudworm esp | hud | debug | walkonly | strict | failsafe | leaves",
+                "/mudworm stuckwarp | stuckcmd <command> | stucktime <seconds>",
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
                 "/mudworm sites clear | reload")) Chat.msg(s);
