@@ -49,8 +49,8 @@ public final class Macro {
     private static final long SKIP_MS = 60_000;
     private static final long PATROL_REVISIT_MS = 120_000;
     private static final long CLOSER_CHECK_MS = 3000;
-    /** A different spot must be this many blocks closer than the current goal before we switch. */
-    private static final double CLOSER_MARGIN = 4.0;
+    /** A different spot must be at least this many blocks (and 40 %) closer than the current goal before we switch. */
+    private static final double CLOSER_MARGIN = 8.0;
     private static final double PATROL_RADIUS = 10;
     /** Patrol goals further than this are pulled closer (the far end is not loaded yet). */
     private static final double MAX_GOAL_DIST = 90;
@@ -346,14 +346,17 @@ public final class Macro {
             status = "Scanning terrain";
             return;
         }
+        BlockPos near = spotInReach(mc, p);
+        if (near != null) { // already close enough to another spot: no hop needed
+            goal = Pathfinder.Goal.spot(near);
+            patrolPoint = null;
+            enterDig(now);
+            return;
+        }
         BlockPos spot = nearestSpot(p);
         if (spot != null) {
             goal = Pathfinder.Goal.spot(spot);
             patrolPoint = null;
-            if (clickPoint(mc.level, p, p.getEyePosition(), spot) != null) {
-                enterDig(now);
-                return;
-            }
             beginPlan(mc, p, now);
             return;
         }
@@ -368,6 +371,22 @@ public final class Macro {
         if (c.distanceTo(me) > MAX_GOAL_DIST) c = me.add(c.subtract(me).normalize().scale(MAX_GOAL_DIST));
         goal = Pathfinder.Goal.area(c, PATROL_RADIUS);
         beginPlan(mc, p, now);
+    }
+
+    /** The nearest known spot we can click right now without moving (so no teleport is spent on it), or null. */
+    private BlockPos spotInReach(Minecraft mc, LocalPlayer p) {
+        BlockPos best = null;
+        double bd = Double.MAX_VALUE;
+        Vec3 eye = p.getEyePosition();
+        for (BlockPos s : SpotScanner.SPOTS.keySet()) {
+            if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s)) continue;
+            double d = s.getCenter().distanceToSqr(eye);
+            if (d > (Config.reach + 0.5) * (Config.reach + 0.5) || d >= bd) continue;
+            if (clickPoint(mc.level, p, eye, s) == null) continue;
+            bd = d;
+            best = s;
+        }
+        return best;
     }
 
     private BlockPos nearestSpot(LocalPlayer p) {
@@ -398,7 +417,8 @@ public final class Macro {
         if (best.equals(goal.spot())) return false;
         double now2 = Math.sqrt(best.distToCenterSqr(p.position()));
         double cur = Math.sqrt(goal.spot().distToCenterSqr(p.position()));
-        return now2 + CLOSER_MARGIN < cur;
+        // only worth abandoning the route (and the hops already spent on it) for a much closer spot
+        return now2 < cur - Math.max(CLOSER_MARGIN, 0.4 * cur);
     }
 
     /** Known spot sites first (nearest not visited lately), then a grid over the patrol area. */
@@ -533,12 +553,19 @@ public final class Macro {
             stage = Stage.CHOOSE;
             return;
         }
-        if (goal.spot() != null && clickPoint(mc.level, p, p.getEyePosition(), goal.spot()) != null) {
+        BlockPos inReach = spotInReach(mc, p);
+        if (inReach != null) { // this landing already reaches a spot (maybe not the one we planned for): take it
+            if (goal.spot() == null || !goal.spot().equals(inReach)) {
+                Chat.debug("Spot " + inReach.toShortString() + " is already in reach - taking it without more hops.");
+                goal = Pathfinder.Goal.spot(inReach);
+                patrolPoint = null;
+                approaching = null;
+            }
             release(mc);
             enterDig(now);
             return;
         }
-        // a closer spot showed up: go there instead
+        // a clearly closer spot showed up: go there instead
         if (closerSpotExists(p, now)) {
             Chat.debug("A closer spot is known - switching to it.");
             release(mc);

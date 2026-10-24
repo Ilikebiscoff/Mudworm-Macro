@@ -17,8 +17,12 @@ import java.util.Set;
 /**
  * Etherwarp-only route planner. Every move is one Ether Transmission hop from the block you stand on to another
  * block in range; there is no walking. A* over landing blocks with a constant cost per hop (so it finds the route
- * with the fewest hops), where every hop must pass {@link Etherwarp#shot}: no wall in front, the same target block
- * for the whole aim cone, two clear blocks above the landing.
+ * with the fewest hops), where every hop must pass {@link Etherwarp#shot}: no wall in front, a safe aim cone, two
+ * clear blocks above the landing.
+ * <p>
+ * To waste as few teleports as possible it searches twice: first nearly optimal (a slightly weighted A*), and only
+ * if that runs out of budget a greedy one. The route it finds is then <b>shortcut</b>: for every stop it tries to
+ * hop straight to the furthest later stop, which removes hops the search never tried directly.
  * <p>
  * The goal is a landing from which the spot block can be clicked (in reach, clear view), or, for patrolling, any
  * landing near a point. Runs on the planner thread over the {@link WorldCache} snapshot ({@link #run}), so it can
@@ -53,10 +57,10 @@ public final class Pathfinder {
         }
     }
 
-    private static final int MAX_EXPANSIONS = 600;
-    /** A hop rarely goes the full range straight at the goal; assume about this share (makes the search greedy). */
-    private static final double HOP_EFFICIENCY = 0.55;
-    private static final long TIMEOUT_NS = 2_500_000_000L;
+    /** Phase 1: nearly optimal. Phase 2 (only if phase 1 fails): greedy. */
+    private static final double WEIGHT_FINE = 1.2, WEIGHT_GREEDY = 1.9;
+    private static final int EXPANSIONS_FINE = 350, EXPANSIONS_GREEDY = 600;
+    private static final long TIMEOUT_NS = 2_500_000_000L, FINE_NS = 1_200_000_000L;
     /** Hops tried per node: the best ones by distance to the goal, then a spread of the rest. */
     private static final int BEST = 24, SPREAD = 16;
     private static final double AVOID_COST = 25;
@@ -64,21 +68,24 @@ public final class Pathfinder {
     private final WorldCache.Reader c;
     private final Goal goal;
     private final double range;
+    private final BlockPos startFeet;
     private final Vec3 startEye;
     private final Set<Long> avoid;
     private final Map<Long, Node> nodes = new HashMap<>();
     private final PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingDouble(n -> n.f));
-    private final Node start;
+    private Node start;
+    private double weight = WEIGHT_FINE;
     private int expansions;
     private volatile State state = State.RUNNING;
     private volatile boolean cancelled;
     private volatile List<Step> result = List.of();
 
     // statistics for /mudworm dev
-    private int tried, accepted, rejRange, rejTarget, rejCone, noCandidates;
+    private int tried, accepted, rejRange, rejTarget, rejCone, noCandidates, shortcuts, hopsBefore;
     private double bestGoalDist = Double.MAX_VALUE;
     private BlockPos bestNode;
     private long elapsedMs;
+    private String phase = "";
     private volatile String outcome = "running";
 
     /**
@@ -90,13 +97,9 @@ public final class Pathfinder {
         this.c = cache.reader();
         this.goal = goal;
         this.range = range;
+        this.startFeet = startFeet;
         this.startEye = startEye;
         this.avoid = avoid;
-        start = new Node(startFeet);
-        nodes.put(startFeet.asLong(), start);
-        start.g = 0;
-        start.f = h(startFeet.getX(), startFeet.getY(), startFeet.getZ());
-        open.add(start);
     }
 
     public State state() {
@@ -118,27 +121,33 @@ public final class Pathfinder {
 
     /** One line about how the search went (for /mudworm dev). */
     public String report() {
-        return String.format("%s | %d ms, %d expansions, %d nodes | hops tried %d: ok %d, out of range %d, "
-                        + "bad target %d, cone unsafe %d | expansions with no candidate %d | closest landing to goal: %s (%.1f blocks)",
-                outcome, elapsedMs, expansions, nodes.size(), tried, accepted, rejRange, rejTarget, rejCone,
-                noCandidates, bestNode == null ? "none" : bestNode.toShortString(),
+        return String.format("%s%s | %d ms, %d expansions, %d nodes | hops tried %d: ok %d, out of range %d, "
+                        + "bad target %d, cone unsafe %d | expansions with no candidate %d | shortcut removed %d of %d hops | "
+                        + "closest landing to goal: %s (%.1f blocks)",
+                outcome, phase, elapsedMs, expansions, nodes.size(), tried, accepted, rejRange, rejTarget, rejCone,
+                noCandidates, shortcuts, hopsBefore, bestNode == null ? "none" : bestNode.toShortString(),
                 bestGoalDist == Double.MAX_VALUE ? -1.0 : bestGoalDist);
     }
 
     /** Runs the whole search. Call from the planner thread. */
     public void run() {
         long t0 = System.nanoTime();
-        long deadline = t0 + TIMEOUT_NS;
         try {
-            while (!cancelled) {
-                if (System.nanoTime() > deadline) {
-                    outcome = "TIMEOUT";
-                    break;
-                }
-                if (!stepOnce()) {
-                    elapsedMs = (System.nanoTime() - t0) / 1_000_000;
-                    return;
-                }
+            phase = " (fine)";
+            List<Step> found = search(WEIGHT_FINE, EXPANSIONS_FINE, t0 + FINE_NS);
+            if (found == null && !cancelled) {
+                phase = " (greedy)";
+                found = search(WEIGHT_GREEDY, EXPANSIONS_GREEDY, t0 + TIMEOUT_NS);
+            }
+            if (found != null) {
+                hopsBefore = found.size();
+                List<Step> better = shortcut(found);
+                shortcuts = found.size() - better.size();
+                result = better;
+                outcome = "FOUND " + better.size() + " hops";
+                elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+                state = State.FOUND;
+                return;
             }
             if (cancelled) outcome = "cancelled";
         } catch (Throwable t) {
@@ -149,30 +158,45 @@ public final class Pathfinder {
         state = State.FAILED;
     }
 
-    /** @return false when the search ended (state is set). */
-    private boolean stepOnce() {
-        Node n = open.poll();
-        if (n == null || expansions >= MAX_EXPANSIONS) {
-            outcome = n == null ? "FAILED: no more hops to try" : "FAILED: expansion limit";
-            state = State.FAILED;
-            return false;
+    // ---- search ---------------------------------------------------------------------------------------------
+
+    /** One A* run. Returns the hops, or null (outcome says why). */
+    private List<Step> search(double w, int maxExpansions, long deadlineNs) {
+        weight = w;
+        nodes.clear();
+        open.clear();
+        expansions = 0;
+        start = new Node(startFeet);
+        nodes.put(startFeet.asLong(), start);
+        start.g = 0;
+        start.f = h(startFeet.getX(), startFeet.getY(), startFeet.getZ());
+        open.add(start);
+        while (!cancelled) {
+            if (System.nanoTime() > deadlineNs) {
+                outcome = "FAILED: timeout";
+                return null;
+            }
+            Node n = open.poll();
+            if (n == null) {
+                outcome = "FAILED: no more hops to try";
+                return null;
+            }
+            if (expansions >= maxExpansions) {
+                outcome = "FAILED: expansion limit";
+                return null;
+            }
+            if (n.closed) continue;
+            n.closed = true;
+            expansions++;
+            double gd = Math.sqrt(n.pos.distToCenterSqr(goal.center()));
+            if (gd < bestGoalDist) {
+                bestGoalDist = gd;
+                bestNode = n.pos;
+            }
+            if (isGoal(n.pos)) return build(n);
+            expand(n);
         }
-        if (n.closed) return true;
-        n.closed = true;
-        expansions++;
-        double gd = Math.sqrt(n.pos.distToCenterSqr(goal.center()));
-        if (gd < bestGoalDist) {
-            bestGoalDist = gd;
-            bestNode = n.pos;
-        }
-        if (isGoal(n.pos)) {
-            result = build(n);
-            outcome = "FOUND " + result.size() + " hops";
-            state = State.FOUND;
-            return false;
-        }
-        expand(n);
-        return true;
+        return null;
     }
 
     // ---- goal / heuristic -----------------------------------------------------------------------------------
@@ -197,11 +221,11 @@ public final class Pathfinder {
         return false;
     }
 
-    /** Hops still needed if every hop went the full range straight at the goal. */
+    /** Hops still needed if every hop went the full range straight at the goal (times the search weight). */
     private double h(int x, int y, int z) {
         double dx = x + 0.5 - goal.center().x, dy = y + 0.5 - goal.center().y, dz = z + 0.5 - goal.center().z;
         double d = Math.sqrt(dx * dx + dy * dy + dz * dz) - goal.radius();
-        return Math.max(0, d) / (range * HOP_EFFICIENCY) * Config.etherCost;
+        return Math.max(0, d) / range * Config.etherCost * weight;
     }
 
     // ---- hops -----------------------------------------------------------------------------------------------
@@ -277,6 +301,35 @@ public final class Pathfinder {
         List<Step> out = new ArrayList<>();
         for (Node n = end; n != null && n.shot != null; n = n.parent) out.add(new Step(n.pos, n.shot));
         Collections.reverse(out);
+        return out;
+    }
+
+    // ---- fewer hops: shortcut the route ---------------------------------------------------------------------
+
+    /**
+     * From every stop (the start, then each landing), try to hop straight to the furthest later landing. The search
+     * only tries ~40 hops per stop, so a direct hop often exists that it never looked at.
+     */
+    private List<Step> shortcut(List<Step> steps) {
+        int n = steps.size();
+        if (n < 2) return steps;
+        List<Step> out = new ArrayList<>();
+        int i = -1; // -1 = the start
+        while (i < n - 1 && !cancelled) {
+            Vec3 eye = i < 0 ? startEye : Etherwarp.eyeAt(steps.get(i).feet());
+            int next = i + 1;
+            Etherwarp.Shot nextShot = steps.get(i + 1).shot();
+            for (int j = n - 1; j >= i + 2; j--) {
+                Etherwarp.Shot sh = Etherwarp.shot(c, eye, steps.get(j).shot().target(), range);
+                if (sh != null) {
+                    next = j;
+                    nextShot = sh;
+                    break;
+                }
+            }
+            out.add(new Step(steps.get(next).feet(), nextShot));
+            i = next;
+        }
         return out;
     }
 }

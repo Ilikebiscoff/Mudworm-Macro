@@ -35,10 +35,14 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    **own thread** over a terrain snapshot that the game thread fills 3 ms per tick (nearest chunks first), so planning
    never lags the game. The goal is a landing block from which the spot block is in reach (4 blocks) with a clear view
    of its top or middle; while patrolling it is any landing within 10 blocks of a patrol point.
+   **Few hops:** the search is nearly optimal (a slightly weighted A*, greedy only as a fallback), and the route it
+   finds is then shortcut: from every stop it tries to hop straight to the furthest later stop. Before it spends a hop
+   on a spot, it clicks any spot already in reach from where it stands (also after every landing and every click), so
+   clusters of spots cost no extra teleports.
    **Chained hops:** the macro stays crouched between hops and re-aims straight from the landing, so a long trip is
    a quick series of teleports.
-   **Closer spot:** every 3 s it checks whether a known spot is clearly closer than the one it is heading to (or
-   any spot while patrolling) and switches to it.
+   **Closer spot:** every 3 s it checks whether a known spot is much closer (at least 8 blocks and 40 % nearer)
+   than the one it is heading to (or any spot while patrolling) and switches to it.
    **Stuck:** if you have not moved 1 block in 3 s while it should be moving, it runs `/warp murk` (then waits for the
    teleport and carries on). After 3 warps in a row without finishing a spot it stops. Change with
    `/mudworm stuckcmd <command>`, `stucktime <seconds>` or `stuckwarp` (off).
