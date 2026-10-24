@@ -709,7 +709,12 @@ public final class Macro {
         } else {
             sneakSince = 0;
         }
-        aim.setTarget(shot.yaw(), shot.pitch(), 2500f, 1.6f);
+        if (Config.blatant) { // BLATANT: the camera stays where it is, the shot angles are sent silently at the click
+            aim.precise();
+            aim.setTarget(p.getYRot(), p.getXRot(), 100f, 1f);
+        } else {
+            aim.setTarget(shot.yaw(), shot.pitch(), 2500f, 1.6f);
+        }
         if (now - prepSince > 3000 + Config.hopDelayMs) {
             replan(mc, p, now, "could not line up the etherwarp");
             return;
@@ -722,9 +727,9 @@ public final class Macro {
         boolean sneakOk = sneakSince != 0 && now - sneakSince >= 200 && nextSlotChange <= now;
         float yawErr = Math.abs(net.minecraft.util.Mth.wrapDegrees(shot.yaw() - p.getYRot()));
         float pitchErr = Math.abs(shot.pitch() - p.getXRot());
-        boolean aimed = aim.settled(p, Math.max(0.1f, aimStep(mc) * 0.75f));
+        boolean aimed = Config.blatant || aim.settled(p, Math.max(0.1f, aimStep(mc) * 0.75f));
         prepWhy = (sneakOk ? "sneak ok" : "waiting for sneak") + ", " + (still ? "still" : "moving/airborne")
-                + ", " + (aimed ? "aimed" : String.format("aiming (err yaw %.2f pitch %.2f)", yawErr, pitchErr));
+                + ", " + (Config.blatant ? "BLATANT (no head movement)" : aimed ? "aimed" : String.format("aiming (err yaw %.2f pitch %.2f)", yawErr, pitchErr));
         if (!sneakOk || !still || !aimed) { // let the server see the sneak, stand still, hold the aim
             readySince = 0;
             return;
@@ -740,12 +745,21 @@ public final class Macro {
         Cell.Live live = new Cell.Live(mc.level);
         double range = Etherwarp.range(p.getInventory().getItem(slot));
         Vec3 eye = new Vec3(p.getX(), p.getY() + Etherwarp.SNEAK_EYE, p.getZ());
-        float yaw = p.getYRot(), pitch = p.getXRot();
+        float yaw = Config.blatant ? shot.yaw() : p.getYRot(), pitch = Config.blatant ? shot.pitch() : p.getXRot();
         BlockPos hit = Etherwarp.predict(live, eye, yaw, pitch, range);
         if (hit != null && hit.distSqr(shot.target()) <= 100 && Etherwarp.coneSafe(live, eye, yaw, pitch, range)) {
             warpFrom = p.position();
             warpAt = now;
-            mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
+            if (Config.blatant) { // silent aim: the use packet carries the shot angles, the camera never moves
+                float oy = p.getYRot(), op = p.getXRot();
+                p.setYRot(yaw);
+                p.setXRot(pitch);
+                mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
+                p.setYRot(oy);
+                p.setXRot(op);
+            } else {
+                mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
+            }
             warps++;
             Chat.log("Etherwarp #" + warps + " click: aiming at " + shot.target().toShortString() + ", ray ends on "
                     + hit.toShortString() + " from " + p.blockPosition().toShortString());
@@ -882,6 +896,13 @@ public final class Macro {
         return true;
     }
 
+    /** The scoot counts as movement: the "not moving for N s -> /warp murk" timer starts again from now. */
+    private void restartStuckTimer(long now) {
+        var pl = Minecraft.getInstance().player;
+        moveRef = pl == null ? null : pl.position();
+        moveRefAt = now;
+    }
+
     private void startScoot(Minecraft mc, long now) {
         release(mc); // stand up: no sneaking while walking
         aim.precise();
@@ -890,11 +911,13 @@ public final class Macro {
         scootProgressAt = now;
         scootBest = Double.MAX_VALUE;
         status = "Scooting to spot";
-        Chat.log("Scooting to " + goal.spot().toShortString() + " (within " + Config.scootRange + " blocks, no teleport)");
+        restartStuckTimer(now);
+        Chat.log("Scooting to " + goal.spot().toShortString() + " (within " + Config.scootRange + " blocks, max " + Config.scootSeconds + " s, no teleport)");
     }
 
     private void giveUpScoot(Minecraft mc, long now, String why) {
         stopMoving(mc);
+        restartStuckTimer(now);
         if (goal != null && goal.spot() != null) scootBlocked.put(goal.spot(), now + 10_000);
         Chat.debug("Scoot stopped: " + why);
         aim.loose();
@@ -914,14 +937,15 @@ public final class Macro {
         aim.setTarget(p.getYRot(), p.getXRot(), 100f, 1f); // hold the camera where it is
         if (clickPoint(mc.level, p, p.getEyePosition(), spot) != null) { // in nuke reach now
             stopMoving(mc);
+            restartStuckTimer(now);
             aim.loose();
             enterDig(now);
             return;
         }
         double dx = spot.getX() + 0.5 - p.getX(), dz = spot.getZ() + 0.5 - p.getZ();
         double hd = Math.hypot(dx, dz);
-        if (hd > Config.scootRange + 1.5 || now - scootStart > 3000) {
-            giveUpScoot(mc, now, "took too long / moved away");
+        if (hd > Config.scootRange + 1.5 || now - scootStart > (long) (Config.scootSeconds * 1000)) {
+            giveUpScoot(mc, now, "scoot time is up (" + Config.scootSeconds + " s) / moved away");
             return;
         }
         if (hd < scootBest - 0.05) {
@@ -1012,6 +1036,10 @@ public final class Macro {
         if (pick == null) return;
         nukeFirst.putIfAbsent(pick, now);
         nukeLast.put(pick, now);
+        if (Config.useAxe && stage != Stage.WARP_PREP && stage != Stage.WARP_WAIT) { // hold the axe for breaking
+            int ax = slotByName(p, Config.axeName);
+            if (ax >= 0 && p.getInventory().getSelectedSlot() != ax) p.getInventory().setSelectedSlot(ax);
+        }
         mc.gameMode.startDestroyBlock(pick, Direction.UP);
         p.swing(InteractionHand.MAIN_HAND);
         lastNukeTick = tickCount;
@@ -1093,6 +1121,9 @@ public final class Macro {
                 .append(" ms)   warping: ").append(warping).append("   warpsSinceSpot: ").append(warpsSinceSpot).append('\n');
         b.append("blacklisted spots: ").append(SpotScanner.BLACKLIST.size()).append(SpotScanner.BLACKLIST.isEmpty() ? "" : " " + SpotScanner.BLACKLIST)
                 .append("   plan failures per spot: ").append(planFails).append('\n');
+        b.append("axe: ").append(Config.useAxe ? "ON" : "off").append(" name '").append(Config.axeName).append("'")
+                .append(Config.useAxe ? " (hotbar slot " + slotByName(Minecraft.getInstance().player, Config.axeName) + ")" : "")
+                .append("   BLATANT mode: ").append(Config.blatant ? "ON" : "off").append('\n');
         b.append("scoot range: ").append(Config.scootRange).append(" blocks   scoot-blocked spots: ").append(scootBlocked.size()).append('\n');
         b.append("skipped spots: ").append(skipUntil.size()).append("   avoid cells: ").append(avoid.size()).append("   replans: ").append(replans).append('\n');
         b.append("done: ").append(spotsDone).append("   floor drops: ").append(floorDrops).append("   mudworm shards: ").append(shards).append('\n');
@@ -1151,6 +1182,19 @@ public final class Macro {
         if (goal == null) return;
         float[] a = Etherwarp.angles(p.getEyePosition(), goal.center());
         aim.setTarget(a[0], 8f, 400f, 0.8f);
+    }
+
+    /** Hotbar slot of the first item whose name contains {@code name} (case-insensitive, never the AOTV), or -1. */
+    public static int slotByName(LocalPlayer p, String name) {
+        if (name == null || name.isBlank()) return -1;
+        String want = name.toLowerCase(Locale.ROOT).trim();
+        int aotv = aotvSlot(p);
+        for (int i = 0; i < 9; i++) {
+            if (i == aotv) continue;
+            ItemStack st = p.getInventory().getItem(i);
+            if (!st.isEmpty() && st.getHoverName().getString().toLowerCase(Locale.ROOT).contains(want)) return i;
+        }
+        return -1;
     }
 
     /** Hotbar slot of an AOTE/AOTV with Ether Transmission, or -1. */

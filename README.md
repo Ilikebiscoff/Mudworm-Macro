@@ -46,7 +46,8 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    macro holds whatever combination of W/A/S/D points at it, relative to where you already look, so the camera never
    turns. It first checks the straight line (solid ground the whole way, nothing in the way, no hazards, so it cannot
    walk you off an edge); if it is blocked or makes no progress for 0.7 s it gives up and teleports instead. Change the
-   range with `/mudworm scoot <blocks>` (0 = off).
+   range with `/mudworm scoot <blocks>` (0 = off). One scoot lasts at most 1.5 s (`/mudworm scoottime <seconds>`), and
+   when it ends the "not moving for 3 s -> /warp murk" timer starts again from zero.
    **Slower hops, less mana:** every teleport waits an extra 250 ms once it is lined up (`/mudworm hopdelay <ms>`).
    **Chained hops:** the macro stays crouched between hops and re-aims straight from the landing, so a long trip is
    a quick series of teleports.
@@ -74,6 +75,14 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    - **After the click:** it waits for the teleport, checks it landed on the planned block, then continues. Three
      warps in a row that do nothing (no mana, server refused) make it run the stuck command (`/warp murk`).
    - **Range:** 57 + the item's `tuned_transmission` (Transmission Tuners, max +4 = 61), minus a 1.5-block margin.
+   **Axe:** `/mudworm axe` toggles using an axe for mining spots; `/mudworm axe name <text>` sets which hotbar item
+   (any item whose name contains the text, default `axe`, not case sensitive). It is held while nuking; the Aspect of
+   the Void is picked again for the next teleport.
+   **Blatant mode (off at every start):** etherwarps normally turn the camera to the shot angle. In blatant mode the
+   camera does not move at all: the use packet is sent with the shot angles and the camera is left alone. That is much
+   easier for anti-cheat and other players to spot, so it needs two steps: `/mudworm blatant unlock` (shows the warning),
+   then within 60 s `/mudworm blatant on I understand this is blatant`. `/mudworm blatant off` turns it off. The HUD shows
+   it while on.
 4. **Nuking: any spot in reach, not only the target.** A nuker runs the whole time: every 3 ticks (150 ms) it breaks
    the nearest known spot within reach (4.6 blocks), whether or not it is the one being teleported to, so spots on the
    way or next to the target go too. No aiming, no turning the head, no line-of-sight check (walls do not matter). A
@@ -126,6 +135,9 @@ Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and 
 | `/mudworm failsafe` | Stop when something else teleports you (on by default) |
 | `/mudworm range <10-61>` | Base etherwarp range (tuners from the item are added) |
 | `/mudworm scoot <blocks>` | Walk (W/A/S/D, no head turning) to spots this close instead of teleporting (default 6, 0 = off) |
+| `/mudworm axe`, `axe name <text>` | Use an axe for mining spots (toggle / hotbar item name) |
+| `/mudworm blatant`, `blatant unlock`, `blatant on <phrase>`, `blatant off` | Silent etherwarp aim without moving the camera; two-step confirmation |
+| `/mudworm scoottime <seconds>` | Longest one scoot may last (default 1.5) |
 | `/mudworm hopdelay <ms>` | Extra wait before every teleport (default 250): slower hops cost less mana |
 | `/mudworm ethercost <n>` | Cost of one hop in the planner |
 | `/mudworm area marsh`, `area here <radius>` | Patrol area |

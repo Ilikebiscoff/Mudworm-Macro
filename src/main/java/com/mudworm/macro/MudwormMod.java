@@ -30,6 +30,7 @@ import java.util.function.Consumer;
 /** Entry point: events, the toggle key, /mudworm commands, HUD and boxes. */
 public final class MudwormMod implements ClientModInitializer {
     private static final Macro M = Macro.INSTANCE;
+    private static volatile long blatantUnlockedAt;
 
     @Override
     public void onInitializeClient() {
@@ -157,6 +158,64 @@ public final class MudwormMod implements ClientModInitializer {
                         Chat.msg("Blacklist cleared.");
                         return 1;
                     })));
+            root.then(lit("axe")
+                    .executes(c -> {
+                        Config.useAxe = !Config.useAxe;
+                        Config.save();
+                        var pl = Minecraft.getInstance().player;
+                        Chat.msg("Axe for mining spots: " + (Config.useAxe ? "on" : "off") + " (name: '" + Config.axeName + "')");
+                        if (Config.useAxe && pl != null && Macro.slotByName(pl, Config.axeName) < 0)
+                            Chat.msg("Warning: no hotbar item with '" + Config.axeName + "' in its name. Set it with /mudworm axe name <text>.");
+                        return 1;
+                    })
+                    .then(lit("name").then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("text",
+                            StringArgumentType.greedyString()).executes(c -> {
+                        Config.axeName = StringArgumentType.getString(c, "text").trim();
+                        Config.save();
+                        var pl = Minecraft.getInstance().player;
+                        Chat.msg("Axe name set to '" + Config.axeName + "' (any hotbar item whose name contains it, not case sensitive)"
+                                + (pl != null && Macro.slotByName(pl, Config.axeName) < 0 ? " - not found in the hotbar right now." : "."));
+                        return 1;
+                    }))));
+            root.then(lit("scoottime").then(RequiredArgumentBuilder.<FabricClientCommandSource, Double>argument("seconds",
+                    DoubleArgumentType.doubleArg(0.2, 10)).executes(c -> {
+                Config.scootSeconds = DoubleArgumentType.getDouble(c, "seconds");
+                Config.save();
+                Chat.msg("One scoot lasts at most " + Config.scootSeconds + " s, then the not-moving timer starts again.");
+                return 1;
+            })));
+            root.then(lit("blatant")
+                    .executes(c -> {
+                        Chat.msg("Blatant mode is " + (Config.blatant ? "ON" : "off") + ". /mudworm blatant unlock  to start turning it on.");
+                        return 1;
+                    })
+                    .then(lit("unlock").executes(c -> {
+                        blatantUnlockedAt = System.currentTimeMillis();
+                        Chat.msg("§cBLATANT MODE: etherwarps will send their aim to the server WITHOUT moving your camera.");
+                        Chat.msg("§cThat is far easier for anti-cheat and other players to spot than normal use. A ban is much more likely.");
+                        Chat.msg("To really turn it on, within 60 s type exactly:  /mudworm blatant on I understand this is blatant");
+                        return 1;
+                    }))
+                    .then(lit("on").then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("phrase",
+                            StringArgumentType.greedyString()).executes(c -> {
+                        String phrase = StringArgumentType.getString(c, "phrase").trim();
+                        boolean unlocked = System.currentTimeMillis() - blatantUnlockedAt < 60_000;
+                        if (!unlocked) {
+                            Chat.msg("First run /mudworm blatant unlock (and read the warning).");
+                        } else if (!phrase.equalsIgnoreCase("I understand this is blatant")) {
+                            Chat.msg("Wrong phrase. Type exactly:  /mudworm blatant on I understand this is blatant");
+                        } else {
+                            Config.blatant = true;
+                            Chat.msg("§cBLATANT MODE ON (until you run /mudworm blatant off or restart the game).");
+                        }
+                        return 1;
+                    })))
+                    .then(lit("off").executes(c -> {
+                        Config.blatant = false;
+                        blatantUnlockedAt = 0;
+                        Chat.msg("Blatant mode off.");
+                        return 1;
+                    })));
             root.then(lit("scoot").then(RequiredArgumentBuilder.<FabricClientCommandSource, Double>argument("blocks",
                     DoubleArgumentType.doubleArg(0, 30)).executes(c -> {
                 Config.scootRange = DoubleArgumentType.getDouble(c, "blocks");
@@ -222,7 +281,9 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
                 "/mudworm update | update check | version",
-                "/mudworm scoot <blocks>  (walk to spots this close with WASD, 0 = off)",
+                "/mudworm axe | axe name <text>  (use an axe for mining spots)",
+                "/mudworm blatant  (silent etherwarp aim: asks for a 2-step confirmation, off at every start)",
+                "/mudworm scoottime <seconds> | scoot <blocks>  (walk to spots this close with WASD, 0 = off)",
                 "/mudworm hopdelay <ms>  (extra wait before each teleport, default 250)",
                 "/mudworm yband <below> <above>  (how far hops may stray up/down from the way to the spot)",
                 "/mudworm blacklist | blacklist clear",

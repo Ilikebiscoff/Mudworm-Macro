@@ -55,6 +55,16 @@ public final class Config {
      * whatever combination points at it, without turning the head. 0 = off.
      */
     public static double scootRange = 6.0;
+    /** How long one scoot (walking the last blocks) may last, in seconds. */
+    public static double scootSeconds = 1.5;
+    /** Use an axe for breaking the spot blocks: the hotbar item whose name contains {@link #axeName} is held while nuking. */
+    public static boolean useAxe = false;
+    public static String axeName = "axe";
+    /**
+     * BLATANT MODE (never saved, off at every start): etherwarps send the aim to the server without moving the camera.
+     * Turned on with a two-step confirmation: /mudworm blatant unlock, then /mudworm blatant on <phrase>.
+     */
+    public static volatile boolean blatant = false;
     /** Extra wait (ms) before every etherwarp once it is lined up. Slower hops cost less mana per minute. */
     public static int hopDelayMs = 250;
     /** Terrain snapshot radius in chunks around the player. */
@@ -95,6 +105,9 @@ public final class Config {
         landAbove = Math.max(0, i(p, "landAbove", landAbove));
         areaMargin = Math.max(0, i(p, "areaMargin", areaMargin));
         scootRange = Math.max(0, Math.min(30, d(p, "scootRange", scootRange)));
+        scootSeconds = Math.max(0.2, Math.min(10, d(p, "scootSeconds", scootSeconds)));
+        useAxe = b(p, "useAxe", useAxe);
+        axeName = p.getProperty("axeName", axeName).trim();
         hopDelayMs = Math.max(0, Math.min(5000, i(p, "hopDelay", hopDelayMs)));
         cacheChunks = Math.max(2, Math.min(12, i(p, "cacheChunks", cacheChunks)));
         areaMinX = i(p, "areaMinX", areaMinX);
@@ -125,6 +138,9 @@ public final class Config {
         p.setProperty("landAbove", "" + landAbove);
         p.setProperty("areaMargin", "" + areaMargin);
         p.setProperty("scootRange", "" + scootRange);
+        p.setProperty("scootSeconds", "" + scootSeconds);
+        p.setProperty("useAxe", "" + useAxe);
+        p.setProperty("axeName", axeName);
         p.setProperty("hopDelay", "" + hopDelayMs);
         p.setProperty("cacheChunks", "" + cacheChunks);
         p.setProperty("areaMinX", "" + areaMinX);
