@@ -52,6 +52,10 @@ public final class Macro {
     /** Patrol goals further than this are pulled closer (the far end is not loaded yet). */
     private static final double MAX_GOAL_DIST = 90;
     private static final long PLAN_TIMEOUT_MS = 6000;
+    /** Every this often the nearest visible spot is looked up again and the macro switches to it if it is another one. */
+    private static final long RESCAN_MS = 5000;
+    /** A different spot must be at least this many blocks nearer to count (so equal distances do not flip-flop). */
+    private static final double SWITCH_MARGIN = 2.0;
     /** A route may end short of the spot; plan again from there at most this many times per spot. */
     private static final int MAX_ROUTE_ROUNDS = 6;
     /** Time allowed at the final point to get a spot before it is blacklisted. */
@@ -74,6 +78,7 @@ public final class Macro {
     private Pathfinder.Goal goal;
     /** Set while hopping to the area around a spot we could not plan a click position for. */
     private BlockPos approaching;
+    private long lastRescan;
     private final Map<BlockPos, Integer> planFails = new HashMap<>();
     private Pathfinder planner;
     private Pathfinder.Limits lastLimits;
@@ -426,6 +431,22 @@ public final class Macro {
         return best;
     }
 
+    /** Every 5 s: is the nearest visible spot a different one from the one we are heading for? Then go for that one. */
+    private boolean nearerSpotNow(LocalPlayer p, long now) {
+        if (now - lastRescan < RESCAN_MS) return false;
+        lastRescan = now;
+        BlockPos best = nearestSpot(p);
+        if (best == null) return false;
+        if (goal == null || goal.spot() == null) return true; // patrolling and a spot is in view
+        if (best.equals(goal.spot())) return false;
+        double dBest = Math.sqrt(best.distToCenterSqr(p.position()));
+        double dCur = Math.sqrt(goal.spot().distToCenterSqr(p.position()));
+        if (dBest + SWITCH_MARGIN >= dCur) return false;
+        Chat.debug("Nearest spot is now " + best.toShortString() + " (" + (int) dBest + " blocks) instead of "
+                + goal.spot().toShortString() + " (" + (int) dCur + ") - switching.");
+        return true;
+    }
+
     /** Known spot sites first (nearest not visited lately), then a grid over the patrol area. */
     private BlockPos nextPatrolPoint(LocalPlayer p, long now) {
         for (var it = patrolVisited.entrySet().iterator(); it.hasNext(); ) {
@@ -509,6 +530,7 @@ public final class Macro {
             steps = planner.result();
             stepIdx = 0;
             planner = null;
+            lastRescan = now;
             Chat.debug("Path: " + steps.size() + " etherwarps (" + (now - planStart) + " ms)");
             stage = Stage.FOLLOW;
             return;
@@ -561,6 +583,11 @@ public final class Macro {
             }
             release(mc);
             enterDig(now);
+            return;
+        }
+        if (nearerSpotNow(p, now)) { // 5 s rescan: another spot is the nearest now
+            release(mc);
+            stage = Stage.CHOOSE;
             return;
         }
         List<Step> list = steps;

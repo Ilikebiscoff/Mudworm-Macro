@@ -31,7 +31,8 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    macro **patrols**: first every block a spot was ever seen on (saved in `config/mudworm-sites.txt`), then a grid over
    the patrol area.
 2. **Going to the closest spot: etherwarp only, no walking, no route search.** It picks the nearest spot it can see is
-   alive right now, commits to it, gets it, then picks the next nearest. (Spots it remembers but cannot see are not
+   alive right now and heads for it. **Every 5 seconds it rescans** and, if another spot is now the nearest, switches
+   to that one. It collects it, then picks the next nearest. (Spots it remembers but cannot see are not
    targets; they may be used up.) If it cannot find a way to a spot it gives that one up for a minute and takes the next.
    It heads straight for it. Each hop is found by looking at what real look rays do: many yaw/pitch angles around the
    direction of the spot are traced with the same ray the server uses, every ray that ends on a valid etherwarp
