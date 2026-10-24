@@ -116,7 +116,8 @@ final class Dev {
             BlockPos s = spots.get(i);
             b.append("  ").append(s.toShortString()).append(String.format("  %.1f blocks away  strings=%d  %s\n",
                     Math.sqrt(s.distToCenterSqr(p.position())), SpotScanner.stringsOf(lv, s),
-                    m.isExposed(s) ? "clear view possible" : "WALLED IN (no landing with a clear view)"));
+                    (Math.sqrt(s.distToCenterSqr(p.position())) > Config.maxTargetDistance ? "TOO FAR (ignored)  " : "")
+                            + (m.isExposed(s) ? "clear view possible" : "WALLED IN (no landing with a clear view)")));
         }
         if (spots.isEmpty()) problems.add("no spots known: the macro can only patrol. Stand near a spot and check /mudworm spots");
 

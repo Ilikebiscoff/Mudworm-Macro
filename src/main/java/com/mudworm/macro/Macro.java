@@ -486,6 +486,7 @@ public final class Macro {
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
             if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s) || !SpotScanner.alive(lv, s)) continue;
             double d = Math.sqrt(s.distToCenterSqr(p.position()));
+            if (d > Config.maxTargetDistance) continue; // too far: never hop towards it
             if (!isExposed(s)) d += WALLED_PENALTY;
             if (d < bd) {
                 bd = d;
@@ -1124,6 +1125,12 @@ public final class Macro {
         b.append("axe: ").append(Config.useAxe ? "ON" : "off").append(" name '").append(Config.axeName).append("'")
                 .append(Config.useAxe ? " (hotbar slot " + slotByName(Minecraft.getInstance().player, Config.axeName) + ")" : "")
                 .append("   BLATANT mode: ").append(Config.blatant ? "ON" : "off").append('\n');
+        int far = 0;
+        for (BlockPos sp : SpotScanner.SPOTS.keySet()) {
+            var pl = mc.player;
+            if (pl != null && Math.sqrt(sp.distToCenterSqr(pl.position())) > Config.maxTargetDistance) far++;
+        }
+        b.append("max target distance: ").append(Config.maxTargetDistance).append(" blocks (").append(far).append(" known spots are farther and ignored)\n");
         b.append("scoot range: ").append(Config.scootRange).append(" blocks   scoot-blocked spots: ").append(scootBlocked.size()).append('\n');
         b.append("skipped spots: ").append(skipUntil.size()).append("   avoid cells: ").append(avoid.size()).append("   replans: ").append(replans).append('\n');
         b.append("done: ").append(spotsDone).append("   floor drops: ").append(floorDrops).append("   mudworm shards: ").append(shards).append('\n');

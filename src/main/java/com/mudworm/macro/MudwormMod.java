@@ -233,6 +233,13 @@ public final class MudwormMod implements ClientModInitializer {
                         Chat.msg("Blatant mode off.");
                         return 1;
                     })));
+            root.then(lit("maxdist").then(RequiredArgumentBuilder.<FabricClientCommandSource, Double>argument("blocks",
+                    DoubleArgumentType.doubleArg(10, 400)).executes(c -> {
+                Config.maxTargetDistance = DoubleArgumentType.getDouble(c, "blocks");
+                Config.save();
+                Chat.msg("Only spots within " + Config.maxTargetDistance + " blocks are targeted; farther ones are ignored.");
+                return 1;
+            })));
             root.then(lit("scoot").then(RequiredArgumentBuilder.<FabricClientCommandSource, Double>argument("blocks",
                     DoubleArgumentType.doubleArg(0, 30)).executes(c -> {
                 Config.scootRange = DoubleArgumentType.getDouble(c, "blocks");
@@ -300,6 +307,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm update | update check | version",
                 "/mudworm axe (takes the item in your hand) | axe off | axe name <text>  (use an axe for mining spots)",
                 "/mudworm blatant  (silent etherwarp aim: asks for a 2-step confirmation, off at every start)",
+                "/mudworm maxdist <blocks>  (spots farther than this are never targeted, default 50)",
                 "/mudworm scoottime <seconds> | scoot <blocks>  (walk to spots this close with WASD, 0 = off)",
                 "/mudworm hopdelay <ms>  (extra wait before each teleport, default 250)",
                 "/mudworm yband <below> <above>  (how far hops may stray up/down from the way to the spot)",

@@ -105,6 +105,7 @@ public final class Config {
         landAbove = Math.max(0, i(p, "landAbove", landAbove));
         areaMargin = Math.max(0, i(p, "areaMargin", areaMargin));
         scootRange = Math.max(0, Math.min(30, d(p, "scootRange", scootRange)));
+        maxTargetDistance = Math.max(10, Math.min(400, d(p, "maxTargetDistance", maxTargetDistance)));
         scootSeconds = Math.max(0.2, Math.min(10, d(p, "scootSeconds", scootSeconds)));
         useAxe = b(p, "useAxe", useAxe);
         axeName = p.getProperty("axeName", axeName).trim();
@@ -138,6 +139,7 @@ public final class Config {
         p.setProperty("landAbove", "" + landAbove);
         p.setProperty("areaMargin", "" + areaMargin);
         p.setProperty("scootRange", "" + scootRange);
+        p.setProperty("maxTargetDistance", "" + maxTargetDistance);
         p.setProperty("scootSeconds", "" + scootSeconds);
         p.setProperty("useAxe", "" + useAxe);
         p.setProperty("axeName", axeName);

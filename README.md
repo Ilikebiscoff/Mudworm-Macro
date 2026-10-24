@@ -30,7 +30,9 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    watched as a second trigger. The server never sends the far side of the island, so when no spot is known the
    macro waits for one to come into view; if none shows up and you do not move for 3 s it runs the stuck command (`/warp murk`).
 2. **Going to the closest spot: etherwarp only, no walking, no route search.** It picks the nearest spot it can see is
-   alive right now and heads for it. **After every etherwarp it checks again** and, if another spot is now the nearest, switches
+   alive right now and within 50 blocks (`/mudworm maxdist <blocks>`) and heads for it. Spots farther away are never
+   targeted: the game keeps their strings loaded from 100+ blocks away, and hopping towards them (or towards ones on
+   another level) just looks like teleporting around for no reason. **After every etherwarp it checks again** and, if another spot is now the nearest, switches
    to that one. It collects it, then picks the next nearest. (Spots it remembers but cannot see are not
    targets; they may be used up.) If it cannot find a way to a spot it gives that one up for a minute and takes the next.
    It heads straight for it. Each hop is found by looking at what real look rays do: many yaw/pitch angles around the
@@ -139,6 +141,7 @@ Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and 
 | `/mudworm axe` | Takes the name of the item in your hand and uses it (an axe) for mining spots |
 | `/mudworm axe off`, `axe name <text>` | Turn the axe off / set the hotbar item name by hand |
 | `/mudworm blatant`, `blatant unlock`, `blatant on <phrase>`, `blatant off` | Silent etherwarp aim without moving the camera; two-step confirmation |
+| `/mudworm maxdist <blocks>` | Spots farther than this are never targeted (default 50) |
 | `/mudworm scoottime <seconds>` | Longest one scoot may last (default 1.5) |
 | `/mudworm hopdelay <ms>` | Extra wait before every teleport (default 250): slower hops cost less mana |
 | `/mudworm ethercost <n>` | Cost of one hop in the planner |
