@@ -64,7 +64,7 @@ public class HumanAim {
     /** Exact aim for etherwarps: no held aiming error, no drift, stiff spring. */
     public void precise() {
         offYaw = offPitch = 0f;
-        omega = 22f;
+        omega = 34f;
         zeta = 1f;
         holdUntil = time + 0.03;
         exact = true;

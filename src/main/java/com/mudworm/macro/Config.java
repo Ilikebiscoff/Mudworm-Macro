@@ -45,11 +45,11 @@ public final class Config {
     public static int stuckSeconds = 3;
     public static String stuckCommand = "warp murk";
     /**
-     * The macro stays on the level it started on: landings and spots must be at most this many blocks below / above
-     * the Y you were at when you pressed start (or ran /mudworm home), and inside the patrol area plus a margin.
-     * This keeps it off the big trees, cliffs and floating islands above and below the Marsh.
+     * Hops may only land in the corridor between where you stand and the goal: inside the box around both (plus
+     * {@code areaMargin} blocks) and between their heights (minus {@code landBelow}, plus {@code landAbove}). This
+     * keeps the macro off trees, cliffs and islands that are not on the way.
      */
-    public static int landBelow = 12, landAbove = 14, areaMargin = 25;
+    public static int landBelow = 10, landAbove = 12, areaMargin = 30;
     /** Terrain snapshot radius in chunks around the player. */
     public static int cacheChunks = 7;
 

@@ -56,7 +56,7 @@ public final class Pathfinder {
     private static final long TIMEOUT_NS = 2_000_000_000L;
     /** A hop must bring the landing at least this much closer, except for a few sideways hops to get around things. */
     private static final double MIN_PROGRESS = 1.5;
-    private static final int MAX_SIDEWAYS = 2;
+    private static final int MAX_SIDEWAYS = 1;
     private static final double[] YAW_OFFSETS = {0, 2, -2, 4, -4, 7, -7, 11, -11, 16, -16, 24, -24, 36, -36, 55, -55, 80, -80, 120, -120, 180};
     private static final int KEEP = 6;
 
@@ -67,6 +67,8 @@ public final class Pathfinder {
     private final Vec3 startEye;
     private final Set<Long> avoid;
     private final Limits limits;
+    /** Look angles the mouse can really reach: the rotation at planning time plus whole multiples of {@code step}. */
+    private final float refYaw, refPitch, step;
     private volatile State state = State.RUNNING;
     private volatile boolean cancelled;
     private volatile List<Step> result = List.of();
@@ -82,9 +84,10 @@ public final class Pathfinder {
      * @param range    etherwarp range for this item
      * @param avoid    landing cells that failed before
      * @param limits   where hops may land
+     * @param refYaw   current look angles and the smallest turn the mouse can make (degrees): hop angles are snapped to that grid
      */
     public Pathfinder(WorldCache cache, BlockPos startFeet, Vec3 startEye, Goal goal, double range, Set<Long> avoid,
-                      Limits limits) {
+                      Limits limits, float refYaw, float refPitch, float step) {
         this.c = cache.reader();
         this.goal = goal;
         this.range = range;
@@ -92,6 +95,9 @@ public final class Pathfinder {
         this.startEye = startEye;
         this.avoid = avoid;
         this.limits = limits;
+        this.refYaw = refYaw;
+        this.refPitch = refPitch;
+        this.step = step;
     }
 
     public State state() {
@@ -138,10 +144,10 @@ public final class Pathfinder {
                         break;
                     }
                 }
-                if (pick == null && sideways < MAX_SIDEWAYS) { // nothing gets closer: one hop sideways to get around it
+                if (pick == null && goal.spot() != null && sideways < MAX_SIDEWAYS) { // nothing gets closer: one hop sideways to get around it
                     for (Cand cd : best) {
                         BlockPos land = cd.target().above();
-                        if (farFromRoute(land, steps) && cd.score() < here + 30) {
+                        if (farFromRoute(land, steps) && cd.score() < here + 8) {
                             pick = cd;
                             side = true;
                             break;
@@ -253,6 +259,11 @@ public final class Pathfinder {
 
     /** Traces one look ray; a candidate if it ends on a valid etherwarp target in range. */
     private Cand trace(Vec3 eye, float yaw, float pitch) {
+        if (step > 0) { // only angles the mouse can really reach
+            yaw = refYaw + Math.round((yaw - refYaw) / step) * step;
+            pitch = refPitch + Math.round((pitch - refPitch) / step) * step;
+        }
+        pitch = Math.max(-90f, Math.min(90f, pitch));
         rays++;
         BlockPos hit = Etherwarp.firstStop(c, eye, Etherwarp.dir(yaw, pitch), range, false);
         if (hit == null || !Etherwarp.validTarget(c, hit.getX(), hit.getY(), hit.getZ())) return null;
@@ -263,18 +274,19 @@ public final class Pathfinder {
         return new Cand(score(land), yaw, pitch, hit);
     }
 
-    /** Small angle steps around a hop to land a little closer to the goal. */
+    /** Small angle steps (whole mouse steps) around a hop to land a little closer to the goal. */
     private Cand refine(Vec3 eye, Cand start) {
         Cand best = start;
-        float[][] passes = {{0.25f, 6}, {0.05f, 4}};
+        float g = step > 0 ? step : 0.05f;
+        float[][] passes = {{4 * g, 6}, {g, 4}};
         for (float[] pass : passes) {
-            float step = pass[0];
+            float st = pass[0];
             int n = (int) pass[1];
             Cand center = best;
             for (int iy = -n; iy <= n; iy++) {
                 for (int ip = -n; ip <= n; ip++) {
                     if (iy == 0 && ip == 0) continue;
-                    Cand cd = trace(eye, center.yaw() + iy * step, center.pitch() + ip * step);
+                    Cand cd = trace(eye, center.yaw() + iy * st, center.pitch() + ip * st);
                     if (cd != null && cd.score() < best.score()) best = cd;
                 }
             }

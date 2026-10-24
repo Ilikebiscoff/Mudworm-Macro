@@ -103,7 +103,7 @@ The old jar is deleted automatically. `/mudworm update check` only reports. The 
 2. Press **K** (rebindable in Controls) or run `/mudworm start`.
 3. It finds spots, teleports to them, and clicks them. It patrols when none are in sight. Press **K** again or `/mudworm stop`.
 
-Boxes: green = spot, yellow = current goal, red = blacklisted, grey = ignored (other level), magenta line and box = planned etherwarp hops and their targets.
+Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and box = planned etherwarp hops and their targets.
 
 ### Commands
 
@@ -118,7 +118,7 @@ Boxes: green = spot, yellow = current goal, red = blacklisted, grey = ignored (o
 | `/mudworm range <10-61>` | Base etherwarp range (tuners from the item are added) |
 | `/mudworm ethercost <n>` | Cost of one hop in the planner |
 | `/mudworm area marsh`, `area here <radius>` | Patrol area |
-| `/mudworm home`, `yband <below> <above>` | Stay on this level: hops and spots must be within 12 below / 14 above the Y you started at (and inside the patrol area + 25 blocks). Keeps it off the big trees, cliffs and islands |
+| `/mudworm yband <below> <above>` | How far hops may stray up/down from the way to the spot (default 10 / 12). Hops may only land in the corridor between you and the spot (plus 30 blocks sideways), so it never wanders onto trees, cliffs or islands that are not on the way |
 | `/mudworm blacklist`, `blacklist clear` | Spots given up on in this lobby (reset automatically when the lobby changes) |
 | `/mudworm dev` | Copies a full diagnostic report (state, hotbar, spots, planner test, recent events) |
 | `/mudworm sites clear` | Forget every remembered spot site |
