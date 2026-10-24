@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
@@ -111,7 +112,7 @@ public final class Macro {
     private long etherOffUntil, noManaUntil, nextSlotChange;
 
     // digging
-    private long digAt, digSince;
+    private long digAt, digSince, lastSwing;
     private int digTries;
     private long lastFloorDrop;
 
@@ -784,14 +785,17 @@ public final class Macro {
         stage = Stage.DIG_WAIT;
     }
 
+    /** Keeps mining the spot block every tick until it is broken (or its strings are gone, or the 2 s are up). */
     private void digWait(Minecraft mc, LocalPlayer p, long now) {
-        if (now - digAt > 60) mc.gameMode.stopDestroyBlock();
         BlockPos spot = goal.spot();
-        boolean gone = !SpotScanner.alive(mc.level, spot);
-        if (gone || lastFloorDrop >= digAt) {
+        boolean strings = !SpotScanner.alive(mc.level, spot);
+        boolean broken = mc.level.getBlockState(spot).isAir(); // the block is nuked
+        if (strings || broken || lastFloorDrop >= digAt) {
+            mc.gameMode.stopDestroyBlock();
             spotsDone++;
             warpsSinceSpot = 0;
-            Chat.log("Spot " + spot.toShortString() + " collected");
+            Chat.log("Spot " + spot.toShortString() + " collected (" + (broken ? "block broken" : strings ? "strings gone" : "floor drop message")
+                    + ", " + (now - digAt) + " ms)");
             planFails.remove(spot);
             SpotScanner.remove(spot);
             skipUntil.put(spot, now + 30_000);
@@ -799,7 +803,17 @@ public final class Macro {
             return;
         }
         if (digTimedOut(mc, now)) return;
-        if (now - digAt > 600) stage = Stage.DIG; // try again while the 2 s are not up
+        // keep the aim on the block and keep mining it
+        BlockHitResult hit = clickPoint(mc.level, p, p.getEyePosition(), spot);
+        float[] a = Etherwarp.angles(p.getEyePosition(), hit != null ? hit.getLocation() : spot.getCenter());
+        aim.setTarget(a[0], a[1], 700f, 1.2f);
+        Direction face = hit != null ? hit.getDirection() : Direction.UP;
+        mc.gameMode.continueDestroyBlock(spot, face);
+        if (now - lastSwing > 200) {
+            p.swing(InteractionHand.MAIN_HAND);
+            lastSwing = now;
+        }
+        status = "Breaking spot block";
     }
 
     /**

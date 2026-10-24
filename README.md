@@ -67,8 +67,8 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
      warps that do nothing (no mana, wrong item) make it wait 10 s.
    - **Range:** 57 + the item's `tuned_transmission` (Transmission Tuners, max +4 = 61), minus a 1.5-block margin.
 4. **Clicking the spot.** It aims at a visible face of the spot block, checks the crosshair ray really hits that
-   block, and **left-clicks** it. Holding the AOTV is fine for this because its ability is on right-click. Success
-   is the strings disappearing or the `FLOOR DROP!` line. Once it is at the final point it has **2 seconds** to get
+   block, and **mines it until it is broken** (left-click held on the block). Holding the AOTV is fine for this because its ability is on right-click. Success
+   is the block breaking, the strings disappearing or the `FLOOR DROP!` line. Once it is at the final point it has **2 seconds** to get
    the spot; after that the spot is **blacklisted for this lobby** (red box) and the macro moves on. The blacklist is
    cleared when the lobby or world changes. The block it clicks is the solid block under the strings; plants in
    between do not block it.
