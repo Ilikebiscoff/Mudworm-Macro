@@ -62,7 +62,7 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    **Chained hops:** the macro stays crouched between hops and re-aims straight from the landing, so a long trip is
    a quick series of teleports.
    **Stuck:** if you have not moved 1 block in 3 s while it should be moving, it runs `/warp murk` (then waits for the
-   teleport and carries on). After 3 warps in a row without finishing a spot it stops. Change with
+   teleport and carries on). After 3 warps in a row without finishing a spot it does the hub routine instead (`/hub`, pause, `/warp galatea`) for a fresh lobby; it only stops if 8 lobby changes in a row did not help. Change with
    `/mudworm stuckcmd <command>`, `stucktime <seconds>` or `stuckwarp` (off).
    **Walls and spots:** spots with a clear view are preferred. A spot is "walled in" when no landing within reach
    has a clear line to it; those count 25 blocks further away, so they are only taken when nothing else is around
@@ -83,7 +83,7 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
      *real* ray again from the *real* position with the *real* yaw/pitch. If it does not stop at the planned block,
      nothing is sent. It re-aims, or plans again.
    - **After the click:** it waits for the teleport, checks it landed on the planned block, then continues. Three
-     warps in a row that do nothing (no mana, server refused) make it run the stuck command (`/warp murk`).
+     warps in a row that do nothing (no mana, server refused) make it run the stuck command (`/warp murk`); after 3 of those in a row, the hub routine.
    - **Range:** 57 + the item's `tuned_transmission` (Transmission Tuners, max +4 = 61), minus a 1.5-block margin.
    **Axe:** hold your axe and run `/mudworm axe`: it takes the name of the item in your hand and turns the axe on;
    `/mudworm axe off` turns it off; `/mudworm axe name <text>` sets a shorter name by hand (which hotbar item

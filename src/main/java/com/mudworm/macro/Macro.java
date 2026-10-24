@@ -365,8 +365,17 @@ public final class Macro {
         if (cmd.startsWith("/")) cmd = cmd.substring(1);
         moveRefAt = now;
         if (cmd.isBlank()) return;
-        if (++warpsSinceSpot > 3) {
-            stop(mc, "still stuck after /" + cmd + " 3 times");
+        if (++warpsSinceSpot > 3) { // /warp murk did not help 3 times in a row: get a completely new lobby
+            warpsSinceSpot = 0;
+            if (++refreshesInARow > MAX_REFRESHES_IN_A_ROW) {
+                stop(mc, "still stuck after " + MAX_REFRESHES_IN_A_ROW + " lobby changes");
+                return;
+            }
+            Chat.msg("Still stuck after /" + cmd + " 3 times - doing the hub routine: /hub, then /warp galatea");
+            refreshing = true;
+            lastSwitchAt = now;
+            pendingCommand = "warp galatea";
+            beginWarp(mc, p, now, "hub");
             return;
         }
         Chat.msg(reason + " - /" + cmd + " (stage " + stage + ", " + status + ")");
