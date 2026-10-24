@@ -5,7 +5,7 @@
 An autonomous Fabric 26.1.2 client mod for Galatea that:
 
 1. finds every mudworm spot (Floor Drop) the client can know about, and patrols for the rest;
-2. plans a path to each spot that walks short distances and etherwarps (AOTV, Ether Transmission) long ones;
+2. gets to each spot with a chain of etherwarps (AOTV, Ether Transmission) and no walking;
 3. never tries an etherwarp whose look ray would stop on anything but the planned block (no walls);
 4. left-clicks the spot block, confirms it was used, and moves on.
 
@@ -18,7 +18,7 @@ An autonomous Fabric 26.1.2 client mod for Galatea that:
 | 3 | Spot detection: entity scan of string item displays (3 per block) + `happy_villager` particles, remembered sites | done |
 | 4 | Etherwarp model: item check (`ethermerge`, `tuned_transmission`), strict target rules, DDA ray, aim cone | done |
 | 5 | Pathfinder: etherwarp-only A* over landing blocks on a planner thread, fed by a terrain snapshot | done |
-| 6 | Macro: state machine, walking control, sneak + verify + click warps, left-click spot, retries, skip list | done |
+| 6 | Macro: state machine, sneak + verify + click warps (chained while crouched), left-click spot, retries, skip list | done |
 | 7 | Patrol: remembered sites first, then a grid over the patrol area | done |
 | 8 | HUD, boxes, commands, settings file, safety stops | done |
 | 9 | Build green on CI | after push |
@@ -49,8 +49,8 @@ Test in a quiet lobby first. Run `/mudworm debug` to see every planning step.
 2. Stand within 4 blocks of a spot and `/mudworm start`: it should click without moving. Check the spot disappears
    and whether `FLOOR DROP!` appears. **If left-click does nothing, report it** (see README "Known unknowns").
 3. A spot 10–15 blocks away: it should still teleport (there is no walking), one hop.
-4. A spot 40+ blocks away: magenta line, it sneaks, settles, teleports, lands on the box, then walks the rest.
-5. Put a spot behind a wall or tree: it must never warp into the wall. It should walk around, or warp to a block
+4. A spot 40+ blocks away: magenta line, it sneaks, settles, teleports, lands on the box, then chains the next hop or clicks.
+5. Put a spot behind a wall or tree: it must never warp into the wall. It should pick a warp to a block
    with a clear line.
 6. Set `/mudworm range 30` to force more hops and watch for any warp that lands somewhere unexpected.
 7. Run out of mana: after 3 failed warps it says it is walking for 20 s.
