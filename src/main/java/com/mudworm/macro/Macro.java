@@ -105,6 +105,11 @@ public final class Macro {
     private int digTries;
     private long lastFloorDrop;
 
+    // diagnostics (/mudworm dev)
+    private String lastPlanReport = "no plan yet";
+    private String prepWhy = "";
+    private Stage loggedStage = Stage.CHOOSE;
+
     // stats
     public long runStart, runMs;
     public int spotsDone, warps, floorDrops, shards;
@@ -254,6 +259,10 @@ public final class Macro {
             case DIG -> dig(mc, p, now);
             case DIG_WAIT -> digWait(mc, p, now);
         }
+        if (stage != loggedStage) {
+            Chat.log("stage " + loggedStage + " -> " + stage + " (" + status + ")");
+            loggedStage = stage;
+        }
         if (running && Config.unstuckWarp && stuck(p, now)) stuckWarp(mc, p, now);
     }
 
@@ -303,7 +312,7 @@ public final class Macro {
         warpPos = p.position();
         warpLevel = mc.level;
         warpWaitUntil = now + 15_000;
-        Chat.msg("Did not move for " + Config.stuckSeconds + " s - /" + cmd);
+        Chat.msg("Did not move for " + Config.stuckSeconds + " s - /" + cmd + " (stage " + stage + ", " + status + ")");
     }
 
     // ---- choosing a goal ------------------------------------------------------------------------------------
@@ -423,6 +432,8 @@ public final class Macro {
         }
         double range = Etherwarp.range(p.getInventory().getItem(slot));
         Vec3 eye = new Vec3(p.getX(), p.getY() + Etherwarp.SNEAK_EYE, p.getZ());
+        Chat.log("Planning from " + p.blockPosition().toShortString() + " to " + describeGoal() + ", range "
+                + String.format("%.1f", range));
         planner = new Pathfinder(cache, p.blockPosition(), eye, goal, range, new HashSet<>(avoid));
         exec.execute(planner::run);
         planStart = now;
@@ -445,6 +456,8 @@ public final class Macro {
         faceGoalLoosely(p);
         Pathfinder.State st = planner.state();
         if (st == Pathfinder.State.RUNNING && now - planStart < PLAN_TIMEOUT_MS) return;
+        lastPlanReport = planner.report() + " | goal " + describeGoal() + " | " + (now - planStart) + " ms wall";
+        Chat.log("Plan: " + lastPlanReport);
         if (st == Pathfinder.State.FOUND) {
             steps = planner.result();
             stepIdx = 0;
@@ -556,27 +569,37 @@ public final class Macro {
             return;
         }
         boolean still = p.onGround() && p.getDeltaMovement().horizontalDistanceSqr() < 1e-4;
-        if (sneakSince == 0 || now - sneakSince < 200 || !still || nextSlotChange > now) return; // let the server see the sneak
-        if (!aim.settled(p, 0.35f)) return;
+        boolean sneakOk = sneakSince != 0 && now - sneakSince >= 200 && nextSlotChange <= now;
+        float yawErr = Math.abs(net.minecraft.util.Mth.wrapDegrees(shot.yaw() - p.getYRot()));
+        float pitchErr = Math.abs(shot.pitch() - p.getXRot());
+        boolean aimed = aim.settled(p, 0.35f);
+        prepWhy = (sneakOk ? "sneak ok" : "waiting for sneak") + ", " + (still ? "still" : "moving/airborne")
+                + ", " + (aimed ? "aimed" : String.format("aiming (err yaw %.2f pitch %.2f)", yawErr, pitchErr));
+        if (!sneakOk || !still || !aimed) return; // let the server see the sneak, stand still, hold the aim
 
-        // the safety check: trace the REAL look ray from the REAL sneaking eye, exactly as the server will
+        // the safety check: trace the REAL look ray from the REAL sneaking eye, exactly as the server will.
+        // It has to end on a valid target close to the planned one (never a wall); after landing we re-plan anyway.
         Cell.Live live = new Cell.Live(mc.level);
         double range = Etherwarp.range(p.getInventory().getItem(slot));
         Vec3 eye = new Vec3(p.getX(), p.getY() + Etherwarp.SNEAK_EYE, p.getZ());
         float yaw = p.getYRot(), pitch = p.getXRot();
         BlockPos hit = Etherwarp.predict(live, eye, yaw, pitch, range);
-        if (shot.target().equals(hit) && Etherwarp.robust(live, eye, yaw, pitch, shot.target(), range)) {
+        if (hit != null && hit.distSqr(shot.target()) <= 16 && Etherwarp.robust(live, eye, yaw, pitch, hit, range)) {
             warpFrom = p.position();
             warpAt = now;
             mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
             warps++;
+            Chat.log("Etherwarp #" + warps + " click: aiming at " + shot.target().toShortString() + ", ray ends on "
+                    + hit.toShortString() + " from " + p.blockPosition().toShortString());
             stage = Stage.WARP_WAIT;
             status = "Etherwarp: teleporting";
             return;
         }
-        // not exactly where the plan said (we stopped a bit off-centre): aim again from where we really are
+        // not where the plan said (we stopped a bit off-centre, or the world changed): aim again from where we are
         Etherwarp.Shot again = Etherwarp.shot(live, eye, shot.target(), range);
         if (again == null) {
+            Chat.log("Etherwarp refused: ray ends on " + (hit == null ? "an invalid block / nothing" : hit.toShortString())
+                    + " but the plan wanted " + shot.target().toShortString());
             replan(mc, p, now, "target not visible from here");
             return;
         }
@@ -590,11 +613,14 @@ public final class Macro {
             lastPos = p.position();
             BlockPos land = shot.landing();
             double off = Math.hypot(land.getX() + 0.5 - p.getX(), land.getZ() + 0.5 - p.getZ());
-            if (off > 1.5 || Math.abs(p.getY() - land.getY()) > 1.5) {
-                replan(mc, p, now, "landed somewhere else");
+            warpFails = 0;
+            Chat.log("Teleported to " + p.blockPosition().toShortString() + " (planned " + land.toShortString() + ")");
+            if (off > 1.5 || Math.abs(p.getY() - land.getY()) > 1.5) { // landed elsewhere: plan again from here
+                replans = 0;
+                aim.precise();
+                beginPlan(mc, p, now);
                 return;
             }
-            warpFails = 0;
             stepIdx++;
             if (stepIdx >= steps.size()) { // last hop: stand up and go click
                 mc.options.keyShift.setDown(false);
@@ -604,13 +630,17 @@ public final class Macro {
             return;
         }
         if (now - warpAt > WARP_TIMEOUT_MS) {
+            Chat.log("Etherwarp click did nothing for " + WARP_TIMEOUT_MS + " ms (mana? server refused?)");
             mc.options.keyShift.setDown(false);
+            avoid.add(shot.landing().asLong());
             if (++warpFails >= 3) {
                 warpFails = 0;
                 etherOffUntil = now + 10_000;
                 Chat.msg("Etherwarp did nothing 3 times (mana? item?) - waiting 10 s.");
+                release(mc);
+                stage = Stage.CHOOSE;
+                return;
             }
-            avoid.add(shot.landing().asLong());
             replan(mc, p, now, "no teleport happened");
         }
     }
@@ -677,6 +707,90 @@ public final class Macro {
                     && eye.distanceTo(hit.getLocation()) <= Config.reach) return hit;
         }
         return null;
+    }
+
+    // ---- diagnostics (/mudworm dev) -------------------------------------------------------------------------
+
+    public WorldCache cache() {
+        return cache;
+    }
+
+    private String describeGoal() {
+        if (goal == null) return "none";
+        return goal.spot() != null ? "spot " + goal.spot().toShortString()
+                : "area " + BlockPos.containing(goal.center()).toShortString() + " r" + (int) goal.radius();
+    }
+
+    /** What the macro is thinking right now. */
+    public String devState(Minecraft mc, long now) {
+        StringBuilder b = new StringBuilder();
+        b.append("running: ").append(running).append("   stage: ").append(stage).append("   status: ").append(status).append('\n');
+        b.append("goal: ").append(describeGoal()).append("   patrolPoint: ").append(patrolPoint == null ? "none" : patrolPoint.toShortString()).append('\n');
+        b.append("planner: ").append(planner == null ? "idle" : planner.state() + " (" + planner.expansions() + " expansions)").append('\n');
+        b.append("last plan: ").append(lastPlanReport).append('\n');
+        b.append("steps: ").append(steps.size()).append("   stepIdx: ").append(stepIdx).append('\n');
+        int i = 0;
+        for (Step st : steps) {
+            if (i++ >= 12) {
+                b.append("  ...\n");
+                break;
+            }
+            b.append("  ").append(i - 1).append(": land ").append(st.feet().toShortString()).append(" target ")
+                    .append(st.shot().target().toShortString()).append(String.format(" yaw %.2f pitch %.2f", st.shot().yaw(), st.shot().pitch())).append('\n');
+        }
+        b.append("warp prep: ").append(prepWhy).append("   warps: ").append(warps).append("   warpFails: ").append(warpFails)
+                .append("   noManaFor: ").append(Math.max(0, noManaUntil - now)).append(" ms   etherPauseFor: ").append(Math.max(0, etherOffUntil - now)).append(" ms\n");
+        b.append("shot: ").append(shot == null ? "none" : shot.target().toShortString() + String.format(" yaw %.2f pitch %.2f", shot.yaw(), shot.pitch())).append('\n');
+        b.append("sneakSince: ").append(sneakSince == 0 ? "not sneaking" : (now - sneakSince) + " ms").append("   terrainWait: ").append(terrainWait).append('\n');
+        b.append("stuck: still for ").append(moveRef == null ? 0 : now - moveRefAt).append(" ms (warps at ").append(Config.stuckSeconds * 1000)
+                .append(" ms)   warping: ").append(warping).append("   warpsSinceSpot: ").append(warpsSinceSpot).append('\n');
+        b.append("skipped spots: ").append(skipUntil.size()).append("   avoid cells: ").append(avoid.size()).append("   replans: ").append(replans).append('\n');
+        b.append("done: ").append(spotsDone).append("   floor drops: ").append(floorDrops).append("   mudworm shards: ").append(shards).append('\n');
+        return b.toString();
+    }
+
+    /** Runs the planner right now (blocking, up to 2.5 s) from the player's position and says what it finds. */
+    public String devPlanTest(Minecraft mc) {
+        LocalPlayer p = mc.player;
+        if (p == null) return "no player";
+        int slot = aotvSlot(p);
+        if (slot < 0) return "cannot test: no Aspect of the Void with Ether Transmission in the hotbar";
+        BlockPos spot = nearestSpotIgnoringSkips(p);
+        Pathfinder.Goal g;
+        if (spot != null) g = Pathfinder.Goal.spot(spot);
+        else {
+            Vec3 c = new Vec3((Config.areaMinX + Config.areaMaxX) / 2.0, p.getY(), (Config.areaMinZ + Config.areaMaxZ) / 2.0);
+            Vec3 me = p.position();
+            if (c.distanceTo(me) > MAX_GOAL_DIST) c = me.add(c.subtract(me).normalize().scale(MAX_GOAL_DIST));
+            g = Pathfinder.Goal.area(c, PATROL_RADIUS);
+        }
+        double range = Etherwarp.range(p.getInventory().getItem(slot));
+        Vec3 eye = new Vec3(p.getX(), p.getY() + Etherwarp.SNEAK_EYE, p.getZ());
+        Pathfinder pf = new Pathfinder(cache, p.blockPosition(), eye, g, range, new HashSet<>());
+        pf.run();
+        StringBuilder b = new StringBuilder();
+        b.append("test goal: ").append(g.spot() != null ? "nearest spot " + g.spot().toShortString()
+                : "patrol area centre " + BlockPos.containing(g.center()).toShortString()).append('\n');
+        b.append("result: ").append(pf.report()).append('\n');
+        int i = 0;
+        for (Step st : pf.result()) {
+            b.append("  hop ").append(i++).append(": land ").append(st.feet().toShortString()).append(" target ")
+                    .append(st.shot().target().toShortString()).append('\n');
+        }
+        return b.toString();
+    }
+
+    private BlockPos nearestSpotIgnoringSkips(LocalPlayer p) {
+        BlockPos best = null;
+        double bd = Double.MAX_VALUE;
+        for (BlockPos s : SpotScanner.SPOTS.keySet()) {
+            double d = s.distToCenterSqr(p.position());
+            if (d < bd) {
+                bd = d;
+                best = s;
+            }
+        }
+        return best;
     }
 
     // ---- helpers --------------------------------------------------------------------------------------------

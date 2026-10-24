@@ -50,8 +50,9 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    - **Ray:** an exact voxel walk (DDA) from the sneaking eye (feet + **1.27**). Only air and blocks without collision
      (grass, flowers) let it through. Fluids, signs, banners, heads, pressure plates and tripwire stop it.
      `/mudworm strict` makes it air-only.
-   - **Cone:** the centre ray *and* 4 rays tilted by `jitterDeg` (0.6°) must all stop at the same target. Shots that
-     graze a corner are refused.
+   - **Cone:** the centre ray must stop at the planned block, and 4 rays tilted by `coneDeg` (0.3°) must stop at a
+     valid target too (never a wall). On shallow angles over flat ground the landing can shift a few blocks, so after
+     each hop the route is re-planned from where you really are.
    - **Before every click:** the mod stands still, sneaks for at least 200 ms so the server knows, and traces the
      *real* ray again from the *real* position with the *real* yaw/pitch. If it does not stop at the planned block,
      nothing is sent. It re-aims, or plans again.
@@ -113,7 +114,7 @@ Boxes: green = spot, yellow = current goal, magenta line and box = planned ether
 | `/mudworm update`, `update check`, `version` | Download the newest `latest-build` jar / only check / show the installed version |
 | `/mudworm reload` | Re-read `config/mudworm-macro.properties` |
 
-All settings, including `jitterDeg`, `rangeMargin`, `reach`, `patrolStep` and `scanMinY`/`scanMaxY`, are in
+All settings, including `coneDeg`, `rangeMargin`, `reach`, `patrolStep` and `scanMinY`/`scanMaxY`, are in
 `config/mudworm-macro.properties`.
 
 ### Safety stops

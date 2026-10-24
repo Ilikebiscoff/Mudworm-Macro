@@ -23,8 +23,12 @@ public final class Config {
     public static double etherCost = 10;
     /** Only air lets the etherwarp ray through (plants count as blocking). Safest, finds fewer hops. */
     public static boolean strictRay = false;
-    /** How far (degrees) the aim may be off and every ray in that cone must still hit the same block. */
-    public static double jitterDeg = 0.6;
+    /**
+     * Half-angle (degrees) of the aim cone. The centre ray must stop at the planned block, and rays this far off in
+     * every direction must still stop at a valid etherwarp target (never a wall). They may land a few blocks away from
+     * the planned block (shallow angles over flat ground magnify tiny aim errors); the route is re-planned after landing.
+     */
+    public static double coneDeg = 0.3;
     /** Reach used to click a spot. */
     public static double reach = 4.0;
     /** Draw boxes on spots and the planned path. */
@@ -65,7 +69,7 @@ public final class Config {
         rangeMargin = d(p, "rangeMargin", rangeMargin);
         etherCost = d(p, "etherCost", etherCost);
         strictRay = b(p, "strictRay", strictRay);
-        jitterDeg = d(p, "jitterDeg", jitterDeg);
+        coneDeg = d(p, "coneDeg", coneDeg);
         reach = d(p, "reach", reach);
         esp = b(p, "esp", esp);
         hud = b(p, "hud", hud);
@@ -90,7 +94,7 @@ public final class Config {
         p.setProperty("rangeMargin", "" + rangeMargin);
         p.setProperty("etherCost", "" + etherCost);
         p.setProperty("strictRay", "" + strictRay);
-        p.setProperty("jitterDeg", "" + jitterDeg);
+        p.setProperty("coneDeg", "" + coneDeg);
         p.setProperty("reach", "" + reach);
         p.setProperty("esp", "" + esp);
         p.setProperty("hud", "" + hud);

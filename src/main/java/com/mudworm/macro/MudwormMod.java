@@ -66,6 +66,7 @@ public final class MudwormMod implements ClientModInitializer {
             root.then(lit("stop").executes(c -> run(mc -> M.stop(mc, null))));
             root.then(lit("toggle").executes(c -> run(M::toggle)));
             root.then(lit("help").executes(c -> help()));
+            root.then(lit("dev").executes(c -> run(Dev::run)));
             root.then(lit("version").executes(c -> {
                 Chat.msg(Updater.versionInfo());
                 return 1;
@@ -179,7 +180,7 @@ public final class MudwormMod implements ClientModInitializer {
     private static int help() {
         for (String s : List.of(
                 "/mudworm start | stop | toggle (key K)",
-                "/mudworm status | spots",
+                "/mudworm status | spots | dev (copies a full diagnostic report)",
                 "/mudworm esp | hud | debug | strict | failsafe",
                 "/mudworm stuckwarp | stuckcmd <command> | stucktime <seconds>",
                 "/mudworm range <10-61> | ethercost <blocks>",

@@ -53,7 +53,9 @@ public final class Pathfinder {
         }
     }
 
-    private static final int MAX_EXPANSIONS = 500;
+    private static final int MAX_EXPANSIONS = 600;
+    /** A hop rarely goes the full range straight at the goal; assume about this share (makes the search greedy). */
+    private static final double HOP_EFFICIENCY = 0.55;
     private static final long TIMEOUT_NS = 2_500_000_000L;
     /** Hops tried per node: the best ones by distance to the goal, then a spread of the rest. */
     private static final int BEST = 24, SPREAD = 16;
@@ -71,6 +73,13 @@ public final class Pathfinder {
     private volatile State state = State.RUNNING;
     private volatile boolean cancelled;
     private volatile List<Step> result = List.of();
+
+    // statistics for /mudworm dev
+    private int tried, accepted, rejRange, rejTarget, rejCone, noCandidates;
+    private double bestGoalDist = Double.MAX_VALUE;
+    private BlockPos bestNode;
+    private long elapsedMs;
+    private volatile String outcome = "running";
 
     /**
      * @param startEye the real sneaking eye of the player (used for the first hop)
@@ -107,17 +116,36 @@ public final class Pathfinder {
         return result;
     }
 
+    /** One line about how the search went (for /mudworm dev). */
+    public String report() {
+        return String.format("%s | %d ms, %d expansions, %d nodes | hops tried %d: ok %d, out of range %d, "
+                        + "bad target %d, cone unsafe %d | expansions with no candidate %d | closest landing to goal: %s (%.1f blocks)",
+                outcome, elapsedMs, expansions, nodes.size(), tried, accepted, rejRange, rejTarget, rejCone,
+                noCandidates, bestNode == null ? "none" : bestNode.toShortString(),
+                bestGoalDist == Double.MAX_VALUE ? -1.0 : bestGoalDist);
+    }
+
     /** Runs the whole search. Call from the planner thread. */
     public void run() {
-        long deadline = System.nanoTime() + TIMEOUT_NS;
+        long t0 = System.nanoTime();
+        long deadline = t0 + TIMEOUT_NS;
         try {
             while (!cancelled) {
-                if (System.nanoTime() > deadline) break;
-                if (!stepOnce()) return;
+                if (System.nanoTime() > deadline) {
+                    outcome = "TIMEOUT";
+                    break;
+                }
+                if (!stepOnce()) {
+                    elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+                    return;
+                }
             }
+            if (cancelled) outcome = "cancelled";
         } catch (Throwable t) {
+            outcome = "ERROR " + t;
             t.printStackTrace();
         }
+        elapsedMs = (System.nanoTime() - t0) / 1_000_000;
         state = State.FAILED;
     }
 
@@ -125,14 +153,21 @@ public final class Pathfinder {
     private boolean stepOnce() {
         Node n = open.poll();
         if (n == null || expansions >= MAX_EXPANSIONS) {
+            outcome = n == null ? "FAILED: no more hops to try" : "FAILED: expansion limit";
             state = State.FAILED;
             return false;
         }
         if (n.closed) return true;
         n.closed = true;
         expansions++;
+        double gd = Math.sqrt(n.pos.distToCenterSqr(goal.center()));
+        if (gd < bestGoalDist) {
+            bestGoalDist = gd;
+            bestNode = n.pos;
+        }
         if (isGoal(n.pos)) {
             result = build(n);
+            outcome = "FOUND " + result.size() + " hops";
             state = State.FOUND;
             return false;
         }
@@ -166,7 +201,7 @@ public final class Pathfinder {
     private double h(int x, int y, int z) {
         double dx = x + 0.5 - goal.center().x, dy = y + 0.5 - goal.center().y, dz = z + 0.5 - goal.center().z;
         double d = Math.sqrt(dx * dx + dy * dy + dz * dz) - goal.radius();
-        return Math.max(0, d) / range * Config.etherCost;
+        return Math.max(0, d) / (range * HOP_EFFICIENCY) * Config.etherCost;
     }
 
     // ---- hops -----------------------------------------------------------------------------------------------
@@ -192,6 +227,7 @@ public final class Pathfinder {
                 }
             }
         }
+        if (cand.isEmpty()) noCandidates++;
         cand.sort(Comparator.comparingDouble(a -> Double.longBitsToDouble(a[1])));
         // the best by distance to the goal, then a spread of the rest (in case the best ones are behind a hill)
         List<long[]> pick = new ArrayList<>();
@@ -207,8 +243,18 @@ public final class Pathfinder {
             long key = target.above().asLong();
             Node to = nodes.get(key);
             if (to != null && to.closed) continue;
+            tried++;
             Etherwarp.Shot shot = Etherwarp.shot(c, eye, target, range);
-            if (shot != null) relax(n, target.above(), shot);
+            if (shot != null) {
+                accepted++;
+                relax(n, target.above(), shot);
+            } else {
+                switch (Etherwarp.reject(c, eye, target, range)) {
+                    case 1 -> rejRange++;
+                    case 2 -> rejTarget++;
+                    default -> rejCone++;
+                }
+            }
         }
     }
 

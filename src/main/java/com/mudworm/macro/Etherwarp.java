@@ -31,7 +31,7 @@ import net.minecraft.world.phys.Vec3;
  *   <li>target: a full solid cube that is not interactable, with literal air in the two cells above</li>
  *   <li>ray: only passes air, plus blocks without collision that are not fluids, signs/banners, plates or tripwire
  *       ({@link Config#strictRay}: air only)</li>
- *   <li>every ray in a small cone around the aim ({@link Config#jitterDeg}) must stop at the same target</li>
+ *   <li>every ray in a small cone around the aim ({@link Config#coneDeg}) must stop at a valid target</li>
  * </ul>
  */
 public final class Etherwarp {
@@ -129,13 +129,21 @@ public final class Etherwarp {
         return hit != null && validTarget(c, hit.getX(), hit.getY(), hit.getZ()) ? hit : null;
     }
 
-    /** True when the centre ray and every ray in the jitter cone stop at {@code target}. */
+    /** Rays in the cone may land at most this far (blocks) from the planned target. */
+    private static final double MAX_SPREAD = 12.0;
+
+    /**
+     * True when the centre ray stops at {@code target} and every ray in the cone around it stops at a valid
+     * etherwarp target (so a tiny aim error can never turn into a wall hit) not too far from it.
+     */
     public static boolean robust(Cells c, Vec3 eye, float yaw, float pitch, BlockPos target, double range) {
-        float j = (float) Config.jitterDeg;
-        float[][] offs = {{0, 0}, {j, 0}, {-j, 0}, {0, j}, {0, -j}};
+        if (!target.equals(firstStop(c, eye, dir(yaw, pitch), range, false))) return false;
+        float j = (float) Config.coneDeg;
+        float[][] offs = {{j, 0}, {-j, 0}, {0, j}, {0, -j}};
         for (float[] o : offs) {
             BlockPos hit = firstStop(c, eye, dir(yaw + o[0], pitch + o[1]), range, false);
-            if (!target.equals(hit)) return false;
+            if (hit == null || !validTarget(c, hit.getX(), hit.getY(), hit.getZ())) return false;
+            if (hit.distSqr(target) > MAX_SPREAD * MAX_SPREAD) return false;
         }
         return true;
     }
@@ -157,6 +165,13 @@ public final class Etherwarp {
             if (robust(c, eye, ang[0], ang[1], target, range)) return new Shot(target, ang[0], ang[1]);
         }
         return null;
+    }
+
+    /** Why {@link #shot} gave up on {@code target}: 1 out of range, 2 not a valid target, 3 the aim cone is not safe. */
+    public static int reject(Cells c, Vec3 eye, BlockPos target, double range) {
+        if (eye.distanceTo(target.getCenter()) > range) return 1;
+        if (!validTarget(c, target.getX(), target.getY(), target.getZ())) return 2;
+        return 3;
     }
 
     // ---- maths ----------------------------------------------------------------------------------------------

@@ -91,6 +91,12 @@ public final class WorldCache {
         }
     }
 
+    /** Fills the snapshot around the player right now, for up to {@code ms} milliseconds (blocks the game thread). */
+    public void warm(Minecraft mc, long ms) {
+        lastSchedule = 0;
+        tick(mc, ms * 1_000_000L);
+    }
+
     private void schedule(ClientLevel lv, int pcx, int pcz, long now) {
         int r = Math.max(2, Config.cacheChunks);
         List<long[]> want = new ArrayList<>();
