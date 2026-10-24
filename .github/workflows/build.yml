@@ -1,0 +1,40 @@
+name: Build mod jar
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.4.0
+      - name: Build
+        run: gradle build --no-daemon -Pmod_version=0.1.${{ github.run_number }}
+      - name: Upload jar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mudworm-macro
+          path: build/libs/mudworm-macro-*[0-9].jar
+      - name: Publish latest-build release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | select(.tag_name=="latest-build") | .id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/latest-build" || true
+          gh release create latest-build build/libs/mudworm-macro-*[0-9].jar \
+            --prerelease --title "Latest build" --target "$GITHUB_SHA" \
+            --notes "Automatic build of $GITHUB_SHA"

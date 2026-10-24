@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "com.mudworm.macro.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["ClientPacketListenerMixin"],
+  "injectors": { "defaultRequire": 1 }
+}
