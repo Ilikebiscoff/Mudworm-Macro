@@ -281,7 +281,9 @@ public final class Macro {
             Chat.log("stage " + loggedStage + " -> " + stage + " (" + status + ")");
             loggedStage = stage;
         }
-        if (running && Config.unstuckWarp && stuck(p, now)) stuckWarp(mc, p, now);
+        if (running && Config.unstuckWarp && stuck(p, now)) {
+            stuckWarp(mc, p, now, "Did not move for " + Config.stuckSeconds + " s");
+        }
     }
 
     private void afterTeleport(Vec3 pos, long now) {
@@ -312,7 +314,7 @@ public final class Macro {
         return now - moveRefAt >= Config.stuckSeconds * 1000L;
     }
 
-    private void stuckWarp(Minecraft mc, LocalPlayer p, long now) {
+    private void stuckWarp(Minecraft mc, LocalPlayer p, long now, String reason) {
         String cmd = Config.stuckCommand.trim();
         if (cmd.startsWith("/")) cmd = cmd.substring(1);
         moveRefAt = now;
@@ -330,7 +332,7 @@ public final class Macro {
         warpPos = p.position();
         warpLevel = mc.level;
         warpWaitUntil = now + 15_000;
-        Chat.msg("Did not move for " + Config.stuckSeconds + " s - /" + cmd + " (stage " + stage + ", " + status + ")");
+        Chat.msg(reason + " - /" + cmd + " (stage " + stage + ", " + status + ")");
     }
 
     // ---- choosing a goal ------------------------------------------------------------------------------------
@@ -717,8 +719,12 @@ public final class Macro {
             if (++warpFails >= 3) {
                 warpFails = 0;
                 etherOffUntil = now + 10_000;
-                Chat.msg("Etherwarp did nothing 3 times (mana? item?) - waiting 10 s.");
                 release(mc);
+                if (Config.unstuckWarp) { // the etherwarp keeps doing nothing: warp away and start over
+                    stuckWarp(mc, p, now, "Etherwarp did nothing 3 times");
+                    return;
+                }
+                Chat.msg("Etherwarp did nothing 3 times (mana? item?) - waiting 10 s.");
                 stage = Stage.CHOOSE;
                 return;
             }

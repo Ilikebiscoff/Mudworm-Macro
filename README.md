@@ -64,7 +64,7 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
      *real* ray again from the *real* position with the *real* yaw/pitch. If it does not stop at the planned block,
      nothing is sent. It re-aims, or plans again.
    - **After the click:** it waits for the teleport, checks it landed on the planned block, then continues. Three
-     warps that do nothing (no mana, wrong item) make it wait 10 s.
+     warps in a row that do nothing (no mana, server refused) make it run the stuck command (`/warp murk`).
    - **Range:** 57 + the item's `tuned_transmission` (Transmission Tuners, max +4 = 61), minus a 1.5-block margin.
 4. **Nuking the spot.** Like a nuker mod it breaks the spot block as soon as it is within reach (4.6 blocks): no
    aiming, no turning the head, no line-of-sight check. It keeps breaking the block every tick until it is gone. Success
