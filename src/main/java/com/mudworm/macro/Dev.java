@@ -8,11 +8,6 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.scores.DisplaySlot;
-import net.minecraft.world.scores.Objective;
-import net.minecraft.world.scores.PlayerScoreEntry;
-import net.minecraft.world.scores.PlayerTeam;
-import net.minecraft.world.scores.Scoreboard;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -80,7 +75,7 @@ final class Dev {
                 .append(mc.screen == null ? "none" : mc.screen.getClass().getSimpleName()).append('\n');
         b.append("selected hotbar slot ").append(p.getInventory().getSelectedSlot()).append('\n');
         b.append("sidebar:\n");
-        List<String> side = sidebar(mc);
+        List<String> side = SpotScanner.sidebar(mc);
         if (side == null) b.append("  (none)\n");
         else for (String l : side) b.append("  ").append(l).append('\n');
         boolean galatea = side != null && side.stream().anyMatch(l -> l.toLowerCase().contains("galatea"));
@@ -114,13 +109,14 @@ final class Dev {
         }
 
         b.append("\n== Spots ==\n");
-        b.append("live spots: ").append(SpotScanner.SPOTS.size()).append("   remembered sites: ").append(SpotScanner.SITES.size()).append('\n');
+        b.append("live spots: ").append(SpotScanner.SPOTS.size()).append("   remembered sites: ").append(SpotScanner.SITES.size())
+                .append("  blacklisted: ").append(SpotScanner.BLACKLIST.size()).append('\n');
         List<BlockPos> spots = new ArrayList<>(SpotScanner.SPOTS.keySet());
         spots.sort(Comparator.comparingDouble(s -> s.distToCenterSqr(p.position())));
         for (int i = 0; i < Math.min(8, spots.size()); i++) {
             BlockPos s = spots.get(i);
             b.append("  ").append(s.toShortString()).append(String.format("  %.1f blocks away  strings=%d\n",
-                    Math.sqrt(s.distToCenterSqr(p.position())), SpotScanner.countStrings(lv, s)));
+                    Math.sqrt(s.distToCenterSqr(p.position())), SpotScanner.stringsOf(lv, s)));
         }
         if (spots.isEmpty()) problems.add("no spots known: the macro can only patrol. Stand near a spot and check /mudworm spots");
 
@@ -178,21 +174,5 @@ final class Dev {
         String[] names = {"LOADED", "AIR", "RAYPASS", "TARGET", "COLL", "LOW", "TALL", "FLUID", "HAZARD", "SLOW", "LEAF"};
         for (int i = 0; i < names.length; i++) if ((f & (1 << i)) != 0) s.append(names[i]).append(' ');
         return s.toString().trim();
-    }
-
-    private static List<String> sidebar(Minecraft mc) {
-        if (mc.level == null) return null;
-        Scoreboard sb = mc.level.getScoreboard();
-        Objective obj = sb.getDisplayObjective(DisplaySlot.SIDEBAR);
-        if (obj == null) return null;
-        List<String> out = new ArrayList<>();
-        for (PlayerScoreEntry e : sb.listPlayerScores(obj)) {
-            if (e.isHidden()) continue;
-            PlayerTeam team = sb.getPlayersTeam(e.owner());
-            String line = team == null ? e.ownerName().getString()
-                    : PlayerTeam.formatNameForTeam(team, e.ownerName()).getString();
-            out.add(line.replaceAll("§.", "").trim());
-        }
-        return out;
     }
 }

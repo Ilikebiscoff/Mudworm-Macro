@@ -46,17 +46,23 @@ public final class SpotScanner {
     private static final long FAR_FORGET_MS = 180_000;
 
     public static final class Spot {
+        /** The solid block to click (the ground under the strings). */
         public final BlockPos pos;
+        /** The block cell the string displays are in (the same, or the air cell above the ground). */
+        public BlockPos cube;
         public long lastSeen;
 
-        Spot(BlockPos pos, long now) {
+        Spot(BlockPos pos, BlockPos cube, long now) {
             this.pos = pos;
+            this.cube = cube;
             this.lastSeen = now;
         }
     }
 
     /** Live spots. Only touched on the game thread. */
     public static final Map<BlockPos, Spot> SPOTS = new LinkedHashMap<>();
+    /** Spots the macro could not get in 2 s. Forgotten when the lobby changes. */
+    public static final Set<BlockPos> BLACKLIST = new HashSet<>();
     /** Every block a spot has ever been seen on (patrol targets). */
     public static final Set<BlockPos> SITES = new HashSet<>();
 
@@ -64,6 +70,9 @@ public final class SpotScanner {
     private static boolean sitesDirty;
     private static long lastScan, lastSave;
     private static ClientLevel lastLevel;
+    private static String lobbyId;
+    private static long lastLobbyCheck;
+    private static final java.util.regex.Pattern SERVER_ID = java.util.regex.Pattern.compile("\\d{1,2}/\\d{1,2}/\\d{2,4}\\s+(\\S+)");
 
     /** From the packet mixin (game thread). Adds the spot under a happy_villager particle once its strings check out. */
     public static void onParticle(ClientboundLevelParticlesPacket packet) {
@@ -76,12 +85,16 @@ public final class SpotScanner {
 
     public static void tick(Minecraft mc) {
         ClientLevel level = mc.level;
-        if (level != lastLevel) { // new lobby / island: everything we knew is stale
-            SPOTS.clear();
+        if (level != lastLevel) { // new world: everything we knew is stale
+            reset("world changed");
             lastLevel = level;
         }
         if (level == null || mc.player == null) return;
         long now = System.currentTimeMillis();
+        if (now - lastLobbyCheck > 1000) {
+            lastLobbyCheck = now;
+            checkLobby(mc);
+        }
         if (now - lastScan >= 500) {
             lastScan = now;
             scanEntities(level, now);
@@ -112,15 +125,69 @@ public final class SpotScanner {
         }
     }
 
-    private static void seen(BlockPos pos, long now) {
-        Spot s = SPOTS.get(pos);
+    /** Forget the spots and the blacklist (new lobby or world). */
+    public static volatile int resets;
+
+    public static void reset(String why) {
+        resets++;
+        if (!SPOTS.isEmpty() || !BLACKLIST.isEmpty()) Chat.log("Spots and blacklist cleared: " + why);
+        SPOTS.clear();
+        BLACKLIST.clear();
+    }
+
+    /** The lobby id is the short code next to the date on the sidebar (e.g. "10/14/26 m195H"). */
+    private static void checkLobby(Minecraft mc) {
+        List<String> lines = sidebar(mc);
+        if (lines == null) return;
+        for (String l : lines) {
+            var m = SERVER_ID.matcher(l);
+            if (!m.find()) continue;
+            String id = m.group(1);
+            if (lobbyId != null && !lobbyId.equals(id)) reset("lobby " + lobbyId + " -> " + id);
+            lobbyId = id;
+            return;
+        }
+    }
+
+    public static List<String> sidebar(Minecraft mc) {
+        if (mc.level == null) return null;
+        var sb = mc.level.getScoreboard();
+        var obj = sb.getDisplayObjective(net.minecraft.world.scores.DisplaySlot.SIDEBAR);
+        if (obj == null) return null;
+        List<String> out = new ArrayList<>();
+        for (var e : sb.listPlayerScores(obj)) {
+            if (e.isHidden()) continue;
+            var team = sb.getPlayersTeam(e.owner());
+            String line = team == null ? e.ownerName().getString()
+                    : net.minecraft.world.scores.PlayerTeam.formatNameForTeam(team, e.ownerName()).getString();
+            out.add(line.replaceAll("§.", "").trim());
+        }
+        return out;
+    }
+
+    /** The solid block at or just under the cell that holds the strings: that is the block to click. */
+    private static BlockPos groundOf(ClientLevel level, BlockPos cube) {
+        for (int i = 0; i <= 2; i++) {
+            BlockPos c = cube.below(i);
+            if (!level.getBlockState(c).getCollisionShape(level, c).isEmpty()) return c;
+        }
+        return null;
+    }
+
+    private static void seen(BlockPos cube, long now) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) return;
+        BlockPos ground = groundOf(level, cube);
+        if (ground == null) return;
+        Spot s = SPOTS.get(ground);
         if (s == null) {
-            SPOTS.put(pos, new Spot(pos, now));
-            Chat.debug("Spot found at " + pos.toShortString());
+            SPOTS.put(ground, new Spot(ground, cube, now));
+            Chat.debug("Spot found at " + ground.toShortString() + (ground.equals(cube) ? "" : " (strings at " + cube.toShortString() + ")"));
         } else {
             s.lastSeen = now;
+            s.cube = cube;
         }
-        if (SITES.add(pos)) sitesDirty = true;
+        if (SITES.add(ground)) sitesDirty = true;
     }
 
     /** Number of string displays inside the block (Skyblocker's check). */
@@ -132,9 +199,15 @@ public final class SpotScanner {
         return n;
     }
 
+    /** Strings shown by the spot whose ground block is {@code ground}. */
+    public static int stringsOf(ClientLevel level, BlockPos ground) {
+        Spot s = SPOTS.get(ground);
+        return countStrings(level, s != null ? s.cube : ground);
+    }
+
     /** True while the spot still shows its strings (false once it was used). */
-    public static boolean alive(ClientLevel level, BlockPos pos) {
-        return countStrings(level, pos) >= STRINGS;
+    public static boolean alive(ClientLevel level, BlockPos ground) {
+        return stringsOf(level, ground) >= STRINGS;
     }
 
     private static boolean isString(Display.ItemDisplay d) {

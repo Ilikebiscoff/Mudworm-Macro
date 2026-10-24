@@ -61,7 +61,10 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    - **Range:** 57 + the item's `tuned_transmission` (Transmission Tuners, max +4 = 61), minus a 1.5-block margin.
 4. **Clicking the spot.** It aims at a visible face of the spot block, checks the crosshair ray really hits that
    block, and **left-clicks** it. Holding the AOTV is fine for this because its ability is on right-click. Success
-   is the strings disappearing or the `FLOOR DROP!` line. It retries up to 3 times, then skips the spot for a minute.
+   is the strings disappearing or the `FLOOR DROP!` line. Once it is at the final point it has **2 seconds** to get
+   the spot; after that the spot is **blacklisted for this lobby** (red box) and the macro moves on. The blacklist is
+   cleared when the lobby or world changes. The block it clicks is the solid block under the strings; plants in
+   between do not block it.
 
 ## Requirements
 
@@ -95,7 +98,7 @@ The old jar is deleted automatically. `/mudworm update check` only reports. The 
 2. Press **K** (rebindable in Controls) or run `/mudworm start`.
 3. It finds spots, teleports to them, and clicks them. It patrols when none are in sight. Press **K** again or `/mudworm stop`.
 
-Boxes: green = spot, yellow = current goal, magenta line and box = planned etherwarp hops and their targets.
+Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and box = planned etherwarp hops and their targets.
 
 ### Commands
 
@@ -110,6 +113,8 @@ Boxes: green = spot, yellow = current goal, magenta line and box = planned ether
 | `/mudworm range <10-61>` | Base etherwarp range (tuners from the item are added) |
 | `/mudworm ethercost <n>` | Cost of one hop in the planner |
 | `/mudworm area marsh`, `area here <radius>` | Patrol area |
+| `/mudworm blacklist`, `blacklist clear` | Spots given up on in this lobby (reset automatically when the lobby changes) |
+| `/mudworm dev` | Copies a full diagnostic report (state, hotbar, spots, planner test, recent events) |
 | `/mudworm sites clear` | Forget every remembered spot site |
 | `/mudworm update`, `update check`, `version` | Download the newest `latest-build` jar / only check / show the installed version |
 | `/mudworm reload` | Re-read `config/mudworm-macro.properties` |

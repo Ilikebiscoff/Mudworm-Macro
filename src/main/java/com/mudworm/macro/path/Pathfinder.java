@@ -185,13 +185,13 @@ public final class Pathfinder {
         return canClick(feet.getX(), feet.getY(), feet.getZ(), goal.spot());
     }
 
-    /** Standing (not sneaking) at the cell, the spot block is in reach with a clear view of its top or middle. */
+    /** Standing (not sneaking) at the cell, the spot block is in reach with a clear view of its top or middle (plants do not block it). */
     private boolean canClick(int x, int y, int z, BlockPos spot) {
         Vec3 eye = new Vec3(x + 0.5, y + 1.62, z + 0.5);
         if (eye.distanceToSqr(spot.getCenter()) > Config.reach * Config.reach) return false;
         Vec3[] aims = {new Vec3(spot.getX() + 0.5, spot.getY() + 0.95, spot.getZ() + 0.5), spot.getCenter()};
         for (Vec3 a : aims) {
-            BlockPos hit = Etherwarp.firstStop(c, eye, a.subtract(eye).normalize(), eye.distanceTo(a) + 0.5, true);
+            BlockPos hit = Etherwarp.firstSolid(c, eye, a.subtract(eye).normalize(), eye.distanceTo(a) + 0.5);
             if (spot.equals(hit)) return true;
         }
         return false;

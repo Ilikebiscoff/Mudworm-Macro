@@ -55,6 +55,8 @@ public final class Macro {
     /** Patrol goals further than this are pulled closer (the far end is not loaded yet). */
     private static final double MAX_GOAL_DIST = 90;
     private static final long PLAN_TIMEOUT_MS = 6000;
+    /** Time allowed at the final point to get a spot before it is blacklisted. */
+    private static final long DIG_LIMIT_MS = 2000;
 
     public final HumanAim aim = new HumanAim();
     private final WorldCache cache = new WorldCache();
@@ -71,6 +73,9 @@ public final class Macro {
     private boolean terrainWait;
 
     private Pathfinder.Goal goal;
+    /** Set while hopping to the area around a spot we could not plan a click position for. */
+    private BlockPos approaching;
+    private final Map<BlockPos, Integer> planFails = new HashMap<>();
     private Pathfinder planner;
     private long planStart;
     private volatile List<Step> steps = new ArrayList<>();
@@ -101,7 +106,7 @@ public final class Macro {
     private long etherOffUntil, noManaUntil, nextSlotChange;
 
     // digging
-    private long digAt;
+    private long digAt, digSince;
     private int digTries;
     private long lastFloorDrop;
 
@@ -109,6 +114,7 @@ public final class Macro {
     private String lastPlanReport = "no plan yet";
     private String prepWhy = "";
     private Stage loggedStage = Stage.CHOOSE;
+    private int seenResets;
 
     // stats
     public long runStart, runMs;
@@ -152,6 +158,7 @@ public final class Macro {
         runStart = System.currentTimeMillis();
         lastPos = mc.player.position();
         skipUntil.clear();
+        planFails.clear();
         avoid.clear();
         warpFails = 0;
         warpsSinceSpot = 0;
@@ -217,6 +224,13 @@ public final class Macro {
             }
         }
         cache.tick(mc, 3_000_000L);
+        if (seenResets != SpotScanner.resets) { // new lobby: the blacklist and everything we learned about spots is stale
+            seenResets = SpotScanner.resets;
+            skipUntil.clear();
+            planFails.clear();
+            patrolVisited.clear();
+            avoid.clear();
+        }
         Vec3 pos = p.position();
 
         if (warping) { // waiting for our own /warp to take effect
@@ -321,6 +335,7 @@ public final class Macro {
         release(mc);
         aim.loose();
         replans = 0;
+        approaching = null;
         if (now < etherOffUntil) {
             terrainWait = true;
             status = "Etherwarp not working - waiting";
@@ -336,8 +351,7 @@ public final class Macro {
             goal = Pathfinder.Goal.spot(spot);
             patrolPoint = null;
             if (clickPoint(mc.level, p, p.getEyePosition(), spot) != null) {
-                stage = Stage.DIG;
-                digTries = 0;
+                enterDig(now);
                 return;
             }
             beginPlan(mc, p, now);
@@ -360,7 +374,7 @@ public final class Macro {
         BlockPos best = null;
         double bd = Double.MAX_VALUE;
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
-            if (skipUntil.containsKey(s)) continue;
+            if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s)) continue;
             double d = s.distToCenterSqr(p.position());
             if (d < bd) {
                 bd = d;
@@ -379,6 +393,7 @@ public final class Macro {
         lastCloserCheck = now;
         BlockPos best = nearestSpot(p);
         if (best == null) return false;
+        if (approaching != null) return false; // already hopping towards a spot
         if (goal == null || goal.spot() == null) return true; // patrolling and a spot is known
         if (best.equals(goal.spot())) return false;
         double now2 = Math.sqrt(best.distToCenterSqr(p.position()));
@@ -467,8 +482,21 @@ public final class Macro {
             stage = Stage.FOLLOW;
             return;
         }
-        Chat.debug("No path (" + (planner == null ? 0 : planner.expansions()) + " nodes) - skipping this goal for a minute.");
         cancelPlan();
+        if (goal.spot() != null) {
+            // no landing found from which the spot can be clicked: first get close, then plan again from there
+            BlockPos spot = goal.spot();
+            int fails = planFails.merge(spot, 1, Integer::sum);
+            if (fails <= 2) {
+                double r = fails == 1 ? 10 : 5;
+                Chat.debug("No landing found next to " + spot.toShortString() + " - hopping to within " + (int) r + " blocks first.");
+                approaching = spot;
+                goal = Pathfinder.Goal.area(spot.getCenter(), r);
+                beginPlan(mc, p, now);
+                return;
+            }
+        }
+        Chat.debug("No path - skipping this goal for a minute.");
         skipGoal(now);
         stage = Stage.CHOOSE;
     }
@@ -492,7 +520,8 @@ public final class Macro {
     }
 
     private boolean goalGone() {
-        return goal != null && goal.spot() != null && !SpotScanner.SPOTS.containsKey(goal.spot());
+        return goal != null && goal.spot() != null
+                && (!SpotScanner.SPOTS.containsKey(goal.spot()) || SpotScanner.BLACKLIST.contains(goal.spot()));
     }
 
     // ---- following the path ---------------------------------------------------------------------------------
@@ -506,8 +535,7 @@ public final class Macro {
         }
         if (goal.spot() != null && clickPoint(mc.level, p, p.getEyePosition(), goal.spot()) != null) {
             release(mc);
-            stage = Stage.DIG;
-            digTries = 0;
+            enterDig(now);
             return;
         }
         // a closer spot showed up: go there instead
@@ -521,8 +549,7 @@ public final class Macro {
         if (stepIdx >= list.size()) {
             release(mc);
             if (goal.spot() != null) {
-                stage = Stage.DIG;
-                digTries = 0;
+                enterDig(now);
             } else {
                 if (patrolPoint != null) patrolVisited.put(patrolPoint, now);
                 stage = Stage.CHOOSE;
@@ -647,6 +674,25 @@ public final class Macro {
 
     // ---- clicking the spot ----------------------------------------------------------------------------------
 
+    /** We are at the final point: the 2 s clock for getting this spot starts now. */
+    private void enterDig(long now) {
+        stage = Stage.DIG;
+        digTries = 0;
+        digSince = now;
+    }
+
+    /** 2 s at the final point without getting the spot: blacklist it for this lobby and move on. */
+    private boolean digTimedOut(Minecraft mc, long now) {
+        if (now - digSince < DIG_LIMIT_MS) return false;
+        BlockPos spot = goal.spot();
+        SpotScanner.BLACKLIST.add(spot);
+        Chat.msg("Could not get the spot at " + spot.toShortString() + " within 2 s - blacklisted until the lobby changes.");
+        release(mc);
+        mc.gameMode.stopDestroyBlock();
+        stage = Stage.CHOOSE;
+        return true;
+    }
+
     private void dig(Minecraft mc, LocalPlayer p, long now) {
         stopMoving(mc);
         mc.options.keyShift.setDown(false);
@@ -656,8 +702,10 @@ public final class Macro {
             stage = Stage.CHOOSE;
             return;
         }
+        if (digTimedOut(mc, now)) return;
         BlockHitResult hit = clickPoint(mc.level, p, p.getEyePosition(), spot);
         if (hit == null) {
+            status = "Spot not clickable from here";
             replan(mc, p, now, "spot not clickable from here");
             return;
         }
@@ -665,11 +713,13 @@ public final class Macro {
         float[] a = Etherwarp.angles(p.getEyePosition(), hit.getLocation());
         aim.setTarget(a[0], a[1], 700f, 1.2f);
         if (!aim.settled(p, 3f)) return;
-        // the crosshair must really be on the spot block
+        // the spot block must really be what the line of sight ends on (plants are ignored)
         BlockHitResult again = clickPoint(mc.level, p, p.getEyePosition(), spot);
         if (again == null) return;
         mc.gameMode.startDestroyBlock(spot, again.getDirection());
         p.swing(InteractionHand.MAIN_HAND);
+        Chat.log("Clicked spot " + spot.toShortString() + " from " + p.blockPosition().toShortString()
+                + " (strings " + SpotScanner.stringsOf(mc.level, spot) + ", try " + (digTries + 1) + ")");
         digAt = now;
         digTries++;
         stage = Stage.DIG_WAIT;
@@ -682,27 +732,25 @@ public final class Macro {
         if (gone || lastFloorDrop >= digAt) {
             spotsDone++;
             warpsSinceSpot = 0;
+            Chat.log("Spot " + spot.toShortString() + " collected");
+            planFails.remove(spot);
             SpotScanner.remove(spot);
             skipUntil.put(spot, now + 30_000);
             stage = Stage.CHOOSE;
             return;
         }
-        if (now - digAt > 1200) {
-            if (digTries >= 3) {
-                Chat.debug("Spot did not react to 3 clicks - skipping it.");
-                skipUntil.put(spot, now + SKIP_MS);
-                stage = Stage.CHOOSE;
-            } else {
-                stage = Stage.DIG;
-            }
-        }
+        if (digTimedOut(mc, now)) return;
+        if (now - digAt > 600) stage = Stage.DIG; // try again while the 2 s are not up
     }
 
-    /** A point on the spot block that the crosshair can reach from {@code eye}, or null. */
+    /**
+     * A point on the spot block that the line of sight reaches from {@code eye}, or null. Plants (no collision) do not
+     * block it: the dig packet names the block, it does not depend on what the crosshair is over.
+     */
     private static BlockHitResult clickPoint(Level level, LocalPlayer player, Vec3 eye, BlockPos spot) {
         Vec3[] aims = {new Vec3(spot.getX() + 0.5, spot.getY() + 0.95, spot.getZ() + 0.5), spot.getCenter()};
         for (Vec3 a : aims) {
-            BlockHitResult hit = level.clip(new ClipContext(eye, a, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+            BlockHitResult hit = level.clip(new ClipContext(eye, a, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
             if (hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(spot)
                     && eye.distanceTo(hit.getLocation()) <= Config.reach) return hit;
         }
@@ -744,6 +792,8 @@ public final class Macro {
         b.append("sneakSince: ").append(sneakSince == 0 ? "not sneaking" : (now - sneakSince) + " ms").append("   terrainWait: ").append(terrainWait).append('\n');
         b.append("stuck: still for ").append(moveRef == null ? 0 : now - moveRefAt).append(" ms (warps at ").append(Config.stuckSeconds * 1000)
                 .append(" ms)   warping: ").append(warping).append("   warpsSinceSpot: ").append(warpsSinceSpot).append('\n');
+        b.append("blacklisted spots: ").append(SpotScanner.BLACKLIST.size()).append(SpotScanner.BLACKLIST.isEmpty() ? "" : " " + SpotScanner.BLACKLIST)
+                .append("   plan failures per spot: ").append(planFails).append('\n');
         b.append("skipped spots: ").append(skipUntil.size()).append("   avoid cells: ").append(avoid.size()).append("   replans: ").append(replans).append('\n');
         b.append("done: ").append(spotsDone).append("   floor drops: ").append(floorDrops).append("   mudworm shards: ").append(shards).append('\n');
         return b.toString();
@@ -784,6 +834,7 @@ public final class Macro {
         BlockPos best = null;
         double bd = Double.MAX_VALUE;
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
+            if (SpotScanner.BLACKLIST.contains(s)) continue;
             double d = s.distToCenterSqr(p.position());
             if (d < bd) {
                 bd = d;

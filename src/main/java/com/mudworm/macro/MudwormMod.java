@@ -147,6 +147,16 @@ public final class MudwormMod implements ClientModInitializer {
                         Chat.msg("Patrol area: " + (2 * r) + "x" + (2 * r) + " around you.");
                         return 1;
                     }))));
+            root.then(lit("blacklist")
+                    .executes(c -> {
+                        Chat.msg("Blacklisted spots this lobby: " + SpotScanner.BLACKLIST.size() + " " + SpotScanner.BLACKLIST);
+                        return 1;
+                    })
+                    .then(lit("clear").executes(c -> {
+                        SpotScanner.BLACKLIST.clear();
+                        Chat.msg("Blacklist cleared.");
+                        return 1;
+                    })));
             root.then(lit("sites").then(lit("clear").executes(c -> {
                 SpotScanner.clearSites();
                 Chat.msg("Forgot every remembered spot site.");
@@ -186,6 +196,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
                 "/mudworm update | update check | version",
+                "/mudworm blacklist | blacklist clear",
                 "/mudworm sites clear | reload")) Chat.msg(s);
         return 1;
     }
@@ -195,8 +206,9 @@ public final class MudwormMod implements ClientModInitializer {
         Pathfinder.Goal g = M.goal();
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
             boolean cur = M.running() && g != null && s.equals(g.spot());
-            int stroke = cur ? 0xFFFFE030 : 0xFF30FF60;
-            int fill = cur ? 0x50FFE030 : 0x4030FF60;
+            boolean bad = SpotScanner.BLACKLIST.contains(s);
+            int stroke = bad ? 0xFFFF4040 : cur ? 0xFFFFE030 : 0xFF30FF60;
+            int fill = bad ? 0x30FF4040 : cur ? 0x50FFE030 : 0x4030FF60;
             Gizmos.cuboid(s, GizmoStyle.strokeAndFill(stroke, cur ? 2.5f : 2f, fill)).setAlwaysOnTop();
         }
         if (!M.running()) return;

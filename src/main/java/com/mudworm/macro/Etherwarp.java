@@ -89,6 +89,15 @@ public final class Etherwarp {
      * the ray through (used for "can I see the spot").
      */
     public static BlockPos firstStop(Cells c, Vec3 from, Vec3 dir, double maxDist, boolean airOnly) {
+        return walk(c, from, dir, maxDist, airOnly ? 1 : 0);
+    }
+
+    /** First solid block (or fluid) along the ray, ignoring plants: what you can click on. */
+    public static BlockPos firstSolid(Cells c, Vec3 from, Vec3 dir, double maxDist) {
+        return walk(c, from, dir, maxDist, 2);
+    }
+
+    private static BlockPos walk(Cells c, Vec3 from, Vec3 dir, double maxDist, int mode) {
         int x = (int) Math.floor(from.x), y = (int) Math.floor(from.y), z = (int) Math.floor(from.z);
         int sx = dir.x > 0 ? 1 : dir.x < 0 ? -1 : 0;
         int sy = dir.y > 0 ? 1 : dir.y < 0 ? -1 : 0;
@@ -99,7 +108,7 @@ public final class Etherwarp {
         double tx = sx > 0 ? (x + 1 - from.x) * dx : sx < 0 ? (from.x - x) * dx : Double.POSITIVE_INFINITY;
         double ty = sy > 0 ? (y + 1 - from.y) * dy : sy < 0 ? (from.y - y) * dy : Double.POSITIVE_INFINITY;
         double tz = sz > 0 ? (z + 1 - from.z) * dz : sz < 0 ? (from.z - z) * dz : Double.POSITIVE_INFINITY;
-        boolean strict = airOnly || Config.strictRay;
+        boolean strict = mode == 1 || (mode == 0 && Config.strictRay);
         while (true) {
             double t;
             if (tx < ty && tx < tz) {
@@ -118,7 +127,8 @@ public final class Etherwarp {
             if (t > maxDist) return null;
             short f = c.at(x, y, z);
             if ((f & Cell.LOADED) == 0) return null;
-            boolean passes = (f & Cell.AIR) != 0 || (!strict && (f & Cell.RAYPASS) != 0);
+            boolean passes = mode == 2 ? (f & (Cell.COLL | Cell.FLUID)) == 0
+                    : (f & Cell.AIR) != 0 || (!strict && (f & Cell.RAYPASS) != 0);
             if (!passes) return new BlockPos(x, y, z);
         }
     }
