@@ -157,6 +157,14 @@ public final class MudwormMod implements ClientModInitializer {
                         Chat.msg("Blacklist cleared.");
                         return 1;
                     })));
+            root.then(lit("scoot").then(RequiredArgumentBuilder.<FabricClientCommandSource, Double>argument("blocks",
+                    DoubleArgumentType.doubleArg(0, 30)).executes(c -> {
+                Config.scootRange = DoubleArgumentType.getDouble(c, "blocks");
+                Config.save();
+                Chat.msg(Config.scootRange <= 0 ? "Scoot is off." : "Scoot: spots within " + Config.scootRange
+                        + " blocks are walked to with W/A/S/D (no head turning) instead of teleported to.");
+                return 1;
+            })));
             root.then(lit("hopdelay").then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("ms",
                     IntegerArgumentType.integer(0, 5000)).executes(c -> {
                 Config.hopDelayMs = IntegerArgumentType.getInteger(c, "ms");
@@ -214,6 +222,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
                 "/mudworm update | update check | version",
+                "/mudworm scoot <blocks>  (walk to spots this close with WASD, 0 = off)",
                 "/mudworm hopdelay <ms>  (extra wait before each teleport, default 250)",
                 "/mudworm yband <below> <above>  (how far hops may stray up/down from the way to the spot)",
                 "/mudworm blacklist | blacklist clear",

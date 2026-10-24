@@ -50,7 +50,7 @@ public final class Config {
      * keeps the macro off trees, cliffs and islands that are not on the way.
      */
     public static int landBelow = 10, landAbove = 12, areaMargin = 30;
-    /** Extra wait (ms) before every etherwarp once it is lined up. Slower hops cost less mana per minute. */
+    /**\n     * Scoot: a visible spot this close (flat blocks) that is not in nuke reach yet is reached by holding W/A/S/D,\n     * whatever combination points at it, without turning the head. 0 = off.\n     */\n    public static double scootRange = 6.0;\n    /** Extra wait (ms) before every etherwarp once it is lined up. Slower hops cost less mana per minute. */
     public static int hopDelayMs = 250;
     /** Terrain snapshot radius in chunks around the player. */
     public static int cacheChunks = 7;
@@ -89,6 +89,7 @@ public final class Config {
         landBelow = Math.max(0, i(p, "landBelow", landBelow));
         landAbove = Math.max(0, i(p, "landAbove", landAbove));
         areaMargin = Math.max(0, i(p, "areaMargin", areaMargin));
+        scootRange = Math.max(0, Math.min(30, d(p, "scootRange", scootRange)));
         hopDelayMs = Math.max(0, Math.min(5000, i(p, "hopDelay", hopDelayMs)));
         cacheChunks = Math.max(2, Math.min(12, i(p, "cacheChunks", cacheChunks)));
         areaMinX = i(p, "areaMinX", areaMinX);
@@ -118,6 +119,7 @@ public final class Config {
         p.setProperty("landBelow", "" + landBelow);
         p.setProperty("landAbove", "" + landAbove);
         p.setProperty("areaMargin", "" + areaMargin);
+        p.setProperty("scootRange", "" + scootRange);
         p.setProperty("hopDelay", "" + hopDelayMs);
         p.setProperty("cacheChunks", "" + cacheChunks);
         p.setProperty("areaMinX", "" + areaMinX);

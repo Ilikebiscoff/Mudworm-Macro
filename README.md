@@ -42,6 +42,11 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    **own thread** over a terrain snapshot that the game thread fills 3 ms per tick, so planning never lags the game.
    Before it spends a hop on a spot, it clicks any spot already in reach from where it stands (also after every landing and
    every click), so clusters of spots cost no extra teleports.
+   **Scoot:** a visible spot within 6 blocks (flat distance) that is not in nuke reach yet is not teleported to: the
+   macro holds whatever combination of W/A/S/D points at it, relative to where you already look, so the camera never
+   turns. It first checks the straight line (solid ground the whole way, nothing in the way, no hazards, so it cannot
+   walk you off an edge); if it is blocked or makes no progress for 0.7 s it gives up and teleports instead. Change the
+   range with `/mudworm scoot <blocks>` (0 = off).
    **Slower hops, less mana:** every teleport waits an extra 250 ms once it is lined up (`/mudworm hopdelay <ms>`).
    **Chained hops:** the macro stays crouched between hops and re-aims straight from the landing, so a long trip is
    a quick series of teleports.
@@ -120,6 +125,7 @@ Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and 
 | `/mudworm stuckwarp`, `stuckcmd <command>`, `stucktime <seconds>` | Warp when not moving (default `/warp murk` after 3 s) |
 | `/mudworm failsafe` | Stop when something else teleports you (on by default) |
 | `/mudworm range <10-61>` | Base etherwarp range (tuners from the item are added) |
+| `/mudworm scoot <blocks>` | Walk (W/A/S/D, no head turning) to spots this close instead of teleporting (default 6, 0 = off) |
 | `/mudworm hopdelay <ms>` | Extra wait before every teleport (default 250): slower hops cost less mana |
 | `/mudworm ethercost <n>` | Cost of one hop in the planner |
 | `/mudworm area marsh`, `area here <radius>` | Patrol area |

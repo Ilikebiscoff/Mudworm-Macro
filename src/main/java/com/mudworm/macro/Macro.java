@@ -42,7 +42,7 @@ import java.util.concurrent.Executors;
  * (a wall, a tree, a player-placed block, anything) the click is not sent and the path is planned again.
  */
 public final class Macro {
-    enum Stage { CHOOSE, PLAN, FOLLOW, WARP_PREP, WARP_WAIT, DIG, DIG_WAIT }
+    enum Stage { CHOOSE, PLAN, FOLLOW, WARP_PREP, WARP_WAIT, DIG, DIG_WAIT, SCOOT }
 
     public static final Macro INSTANCE = new Macro();
 
@@ -114,6 +114,10 @@ public final class Macro {
 
     // digging
     private long digAt, digSince, lastSwing, idleSince;
+    // scoot: walk the last few blocks with W/A/S/D, camera untouched
+    private long scootStart, scootProgressAt;
+    private double scootBest;
+    private final Map<BlockPos, Long> scootBlocked = new HashMap<>();
     // nuker: breaks ANY spot in reach, one every few ticks
     private final Map<BlockPos, Long> nukeFirst = new HashMap<>(), nukeLast = new HashMap<>();
     private int tickCount, lastNukeTick = -100;
@@ -242,6 +246,7 @@ public final class Macro {
             planFails.clear();
             nukeFirst.clear();
             nukeLast.clear();
+            scootBlocked.clear();
             patrolVisited.clear();
             avoid.clear();
         }
@@ -287,6 +292,7 @@ public final class Macro {
             case WARP_WAIT -> warpWait(mc, p, now);
             case DIG -> dig(mc, p, now);
             case DIG_WAIT -> digWait(mc, p, now);
+            case SCOOT -> scoot(mc, p, now);
         }
         if (stage != loggedStage) {
             Chat.log("stage " + loggedStage + " -> " + stage + " (" + status + ")");
@@ -370,6 +376,13 @@ public final class Macro {
             goal = Pathfinder.Goal.spot(near);
             patrolPoint = null;
             enterDig(now);
+            return;
+        }
+        BlockPos sc = scootCandidate(mc, p, now);
+        if (sc != null) { // a spot a few blocks away: just walk the rest, no teleport needed
+            goal = Pathfinder.Goal.spot(sc);
+            patrolPoint = null;
+            startScoot(mc, now);
             return;
         }
         BlockPos spot = nearestSpot(p);
@@ -633,6 +646,14 @@ public final class Macro {
             enterDig(now);
             return;
         }
+        BlockPos sc = scootCandidate(mc, p, now);
+        if (sc != null) { // landed a few blocks from a spot: walk the rest instead of another teleport
+            goal = Pathfinder.Goal.spot(sc);
+            patrolPoint = null;
+            release(mc);
+            startScoot(mc, now);
+            return;
+        }
         if (nearerSpotNow(p, now)) { // checked after every etherwarp: another spot is the nearest now
             release(mc);
             stage = Stage.CHOOSE;
@@ -806,6 +827,124 @@ public final class Macro {
         return true;
     }
 
+    // ---- scoot: walk the last blocks with W/A/S/D, camera untouched -----------------------------------------
+
+    /**
+     * A visible spot within {@link Config#scootRange} blocks (flat distance) that is not in nuke reach yet and can be
+     * walked to in a straight line: solid ground all the way, nothing in the way, no hazards. Null if none.
+     */
+    private BlockPos scootCandidate(Minecraft mc, LocalPlayer p, long now) {
+        if (Config.scootRange <= 0) return null;
+        ClientLevel lv = mc.level;
+        if (lv == null) return null;
+        Vec3 eye = p.getEyePosition();
+        BlockPos best = null;
+        double bd = Double.MAX_VALUE;
+        for (BlockPos s : SpotScanner.SPOTS.keySet()) {
+            if (SpotScanner.BLACKLIST.contains(s) || !SpotScanner.alive(lv, s)) continue;
+            Long until = scootBlocked.get(s);
+            if (until != null && until > now) continue;
+            if (eye.distanceTo(s.getCenter()) <= Config.reach - 0.3) continue; // already in reach: the nuker has it
+            double hd = Math.hypot(s.getX() + 0.5 - p.getX(), s.getZ() + 0.5 - p.getZ());
+            if (hd > Config.scootRange || Math.abs(s.getY() + 1 - p.getY()) > 2.5) continue;
+            if (!scootPathSafe(p, s)) {
+                scootBlocked.put(s, now + 4000);
+                continue;
+            }
+            if (hd < bd) {
+                bd = hd;
+                best = s;
+            }
+        }
+        return best;
+    }
+
+    /** Solid ground under every step of the straight line, and room for the body: it cannot walk us off an edge. */
+    private boolean scootPathSafe(LocalPlayer p, BlockPos spot) {
+        var rd = cache.reader();
+        double dx = spot.getX() + 0.5 - p.getX(), dz = spot.getZ() + 0.5 - p.getZ();
+        double hd = Math.hypot(dx, dz);
+        double walk = Math.max(0, hd - (Config.reach - 0.6)); // only as far as needed to get into reach
+        int feetY = (int) Math.floor(p.getY() + 0.01);
+        double px = -dz / Math.max(hd, 1e-6), pz = dx / Math.max(hd, 1e-6);
+        int n = (int) Math.ceil(walk / 0.4) + 1;
+        for (int i = 0; i <= n; i++) {
+            double t = Math.min(walk, i * 0.4) / Math.max(hd, 1e-6);
+            for (double off : new double[]{-0.3, 0, 0.3}) {
+                int x = (int) Math.floor(p.getX() + dx * t + px * off), z = (int) Math.floor(p.getZ() + dz * t + pz * off);
+                short below = rd.at(x, feetY - 1, z), feet = rd.at(x, feetY, z), head = rd.at(x, feetY + 1, z);
+                if ((below & Cell.COLL) == 0 || (below & (Cell.HAZARD | Cell.FLUID | Cell.TALL)) != 0) return false;
+                for (short f : new short[]{feet, head}) {
+                    if ((f & Cell.LOADED) == 0 || (f & (Cell.COLL | Cell.FLUID | Cell.HAZARD)) != 0) return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void startScoot(Minecraft mc, long now) {
+        release(mc); // stand up: no sneaking while walking
+        aim.precise();
+        stage = Stage.SCOOT;
+        scootStart = now;
+        scootProgressAt = now;
+        scootBest = Double.MAX_VALUE;
+        status = "Scooting to spot";
+        Chat.log("Scooting to " + goal.spot().toShortString() + " (within " + Config.scootRange + " blocks, no teleport)");
+    }
+
+    private void giveUpScoot(Minecraft mc, long now, String why) {
+        stopMoving(mc);
+        if (goal != null && goal.spot() != null) scootBlocked.put(goal.spot(), now + 10_000);
+        Chat.debug("Scoot stopped: " + why);
+        aim.loose();
+        stage = Stage.CHOOSE;
+    }
+
+    /** Holds W/A/S/D (whatever combination points at the spot, relative to where we already look). Never turns the head. */
+    private void scoot(Minecraft mc, LocalPlayer p, long now) {
+        BlockPos spot = goal == null ? null : goal.spot();
+        if (spot == null || goalGone()) {
+            stopMoving(mc);
+            stage = Stage.CHOOSE;
+            return;
+        }
+        status = "Scooting to spot";
+        aim.precise();
+        aim.setTarget(p.getYRot(), p.getXRot(), 100f, 1f); // hold the camera where it is
+        if (clickPoint(mc.level, p, p.getEyePosition(), spot) != null) { // in nuke reach now
+            stopMoving(mc);
+            aim.loose();
+            enterDig(now);
+            return;
+        }
+        double dx = spot.getX() + 0.5 - p.getX(), dz = spot.getZ() + 0.5 - p.getZ();
+        double hd = Math.hypot(dx, dz);
+        if (hd > Config.scootRange + 1.5 || now - scootStart > 3000) {
+            giveUpScoot(mc, now, "took too long / moved away");
+            return;
+        }
+        if (hd < scootBest - 0.05) {
+            scootBest = hd;
+            scootProgressAt = now;
+        } else if (now - scootProgressAt > 700) {
+            giveUpScoot(mc, now, "no progress (blocked?)");
+            return;
+        }
+        // split the way to the spot into "forward/back" and "right/left" along where we face
+        double yaw = Math.toRadians(p.getYRot());
+        double fwd = dx * -Math.sin(yaw) + dz * Math.cos(yaw);
+        double rgt = dx * -Math.cos(yaw) + dz * -Math.sin(yaw);
+        double dead = 0.3;
+        mc.options.keyUp.setDown(fwd > dead);
+        mc.options.keyDown.setDown(fwd < -dead);
+        mc.options.keyRight.setDown(rgt > dead);
+        mc.options.keyLeft.setDown(rgt < -dead);
+        mc.options.keySprint.setDown(false);
+        mc.options.keyJump.setDown(false);
+        mc.options.keyShift.setDown(false);
+    }
+
     /** At the final point: the nuker ({@link #nukeNearby}) does the breaking; this stage waits for the spot to be gone. */
     private void dig(Minecraft mc, LocalPlayer p, long now) {
         stopMoving(mc);
@@ -954,6 +1093,7 @@ public final class Macro {
                 .append(" ms)   warping: ").append(warping).append("   warpsSinceSpot: ").append(warpsSinceSpot).append('\n');
         b.append("blacklisted spots: ").append(SpotScanner.BLACKLIST.size()).append(SpotScanner.BLACKLIST.isEmpty() ? "" : " " + SpotScanner.BLACKLIST)
                 .append("   plan failures per spot: ").append(planFails).append('\n');
+        b.append("scoot range: ").append(Config.scootRange).append(" blocks   scoot-blocked spots: ").append(scootBlocked.size()).append('\n');
         b.append("skipped spots: ").append(skipUntil.size()).append("   avoid cells: ").append(avoid.size()).append("   replans: ").append(replans).append('\n');
         b.append("done: ").append(spotsDone).append("   floor drops: ").append(floorDrops).append("   mudworm shards: ").append(shards).append('\n');
         return b.toString();
