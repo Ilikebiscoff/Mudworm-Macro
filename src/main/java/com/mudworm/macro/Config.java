@@ -29,8 +29,8 @@ public final class Config {
      * the planned block (shallow angles over flat ground magnify tiny aim errors); the route is re-planned after landing.
      */
     public static double coneDeg = 0.1;
-    /** Reach used to click a spot. */
-    public static double reach = 4.0;
+    /** Nuker reach: the spot block is broken from this far away (eye to block centre), no aiming needed. */
+    public static double reach = 4.6;
     /** Draw boxes on spots and the planned path. */
     public static boolean esp = true;
     /** Show the status panel. */
@@ -78,7 +78,7 @@ public final class Config {
         etherCost = d(p, "etherCost", etherCost);
         strictRay = b(p, "strictRay", strictRay);
         coneDeg = d(p, "coneDegrees", coneDeg);
-        reach = d(p, "reach", reach);
+        reach = d(p, "nukeReach", reach);
         esp = b(p, "esp", esp);
         hud = b(p, "hud", hud);
         debug = b(p, "debug", debug);
@@ -107,7 +107,7 @@ public final class Config {
         p.setProperty("etherCost", "" + etherCost);
         p.setProperty("strictRay", "" + strictRay);
         p.setProperty("coneDegrees", "" + coneDeg);
-        p.setProperty("reach", "" + reach);
+        p.setProperty("nukeReach", "" + reach);
         p.setProperty("esp", "" + esp);
         p.setProperty("hud", "" + hud);
         p.setProperty("debug", "" + debug);

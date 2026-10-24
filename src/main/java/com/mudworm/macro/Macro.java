@@ -753,6 +753,7 @@ public final class Macro {
         return true;
     }
 
+    /** Nuker: break the spot block as soon as it is in reach. No aiming, no turning the head, no line-of-sight check. */
     private void dig(Minecraft mc, LocalPlayer p, long now) {
         stopMoving(mc);
         mc.options.keyShift.setDown(false);
@@ -763,29 +764,22 @@ public final class Macro {
             return;
         }
         if (digTimedOut(mc, now)) return;
-        BlockHitResult hit = clickPoint(mc.level, p, p.getEyePosition(), spot);
-        if (hit == null) {
-            status = "Spot not clickable from here";
-            replan(mc, p, now, "spot not clickable from here");
+        if (clickPoint(mc.level, p, p.getEyePosition(), spot) == null) {
+            status = "Spot not in reach from here";
+            replan(mc, p, now, "spot not in reach from here");
             return;
         }
-        status = "Clicking spot";
-        float[] a = Etherwarp.angles(p.getEyePosition(), hit.getLocation());
-        aim.setTarget(a[0], a[1], 700f, 1.2f);
-        if (!aim.settled(p, 3f)) return;
-        // the spot block must really be what the line of sight ends on (plants are ignored)
-        BlockHitResult again = clickPoint(mc.level, p, p.getEyePosition(), spot);
-        if (again == null) return;
-        mc.gameMode.startDestroyBlock(spot, again.getDirection());
+        status = "Nuking spot";
+        mc.gameMode.startDestroyBlock(spot, Direction.UP);
         p.swing(InteractionHand.MAIN_HAND);
-        Chat.log("Clicked spot " + spot.toShortString() + " from " + p.blockPosition().toShortString()
-                + " (strings " + SpotScanner.stringsOf(mc.level, spot) + ", try " + (digTries + 1) + ")");
+        Chat.log("Nuking spot " + spot.toShortString() + " from " + p.blockPosition().toShortString()
+                + " (strings " + SpotScanner.stringsOf(mc.level, spot) + ")");
         digAt = now;
         digTries++;
         stage = Stage.DIG_WAIT;
     }
 
-    /** Keeps mining the spot block every tick until it is broken (or its strings are gone, or the 2 s are up). */
+    /** Keeps breaking the spot block every tick until it is gone (or its strings are, or the 2 s are up). */
     private void digWait(Minecraft mc, LocalPlayer p, long now) {
         BlockPos spot = goal.spot();
         boolean strings = !SpotScanner.alive(mc.level, spot);
@@ -803,12 +797,8 @@ public final class Macro {
             return;
         }
         if (digTimedOut(mc, now)) return;
-        // keep the aim on the block and keep mining it
-        BlockHitResult hit = clickPoint(mc.level, p, p.getEyePosition(), spot);
-        float[] a = Etherwarp.angles(p.getEyePosition(), hit != null ? hit.getLocation() : spot.getCenter());
-        aim.setTarget(a[0], a[1], 700f, 1.2f);
-        Direction face = hit != null ? hit.getDirection() : Direction.UP;
-        mc.gameMode.continueDestroyBlock(spot, face);
+        // keep breaking it, camera untouched
+        mc.gameMode.continueDestroyBlock(spot, Direction.UP);
         if (now - lastSwing > 200) {
             p.swing(InteractionHand.MAIN_HAND);
             lastSwing = now;
@@ -817,17 +807,12 @@ public final class Macro {
     }
 
     /**
-     * A point on the spot block that the line of sight reaches from {@code eye}, or null. Plants (no collision) do not
-     * block it: the dig packet names the block, it does not depend on what the crosshair is over.
+     * Non-null when the spot block is within nuker reach of {@code eye}. No line-of-sight check: the break packet names
+     * the block, it does not depend on where the player looks.
      */
     private static BlockHitResult clickPoint(Level level, LocalPlayer player, Vec3 eye, BlockPos spot) {
-        Vec3[] aims = {new Vec3(spot.getX() + 0.5, spot.getY() + 0.95, spot.getZ() + 0.5), spot.getCenter()};
-        for (Vec3 a : aims) {
-            BlockHitResult hit = level.clip(new ClipContext(eye, a, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
-            if (hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(spot)
-                    && eye.distanceTo(hit.getLocation()) <= Config.reach) return hit;
-        }
-        return null;
+        if (eye.distanceToSqr(spot.getCenter()) > Config.reach * Config.reach) return null;
+        return new BlockHitResult(spot.getCenter(), Direction.UP, spot, false);
     }
 
     // ---- diagnostics (/mudworm dev) -------------------------------------------------------------------------
