@@ -78,8 +78,7 @@ final class Dev {
         List<String> side = SpotScanner.sidebar(mc);
         if (side == null) b.append("  (none)\n");
         else for (String l : side) b.append("  ").append(l).append('\n');
-        boolean galatea = side != null && side.stream().anyMatch(l -> l.toLowerCase().contains("galatea"));
-        if (!galatea) problems.add("sidebar does not mention Galatea - are you on Galatea?");
+        if (side == null) problems.add("no sidebar: not in SkyBlock?");
 
         b.append("\n== Hotbar ==\n");
         int aotv = Macro.aotvSlot(p);

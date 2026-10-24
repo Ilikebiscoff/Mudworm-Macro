@@ -30,15 +30,16 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    watched as a second trigger. The server never sends the far side of the island, so when no spot is known the
    macro **patrols**: first every block a spot was ever seen on (saved in `config/mudworm-sites.txt`), then a grid over
    the patrol area.
-2. **Pathfinding: etherwarp only, no walking.** An A* search over landing blocks where every move is one Ether
-   Transmission hop. Each hop costs the same (`etherCost`), so it finds the route with the fewest hops. It runs on its
-   **own thread** over a terrain snapshot that the game thread fills 3 ms per tick (nearest chunks first), so planning
-   never lags the game. The goal is a landing block from which the spot block is in reach (4 blocks) with a clear view
-   of its top or middle; while patrolling it is any landing within 10 blocks of a patrol point.
-   **Few hops:** the search is nearly optimal (a slightly weighted A*, greedy only as a fallback), and the route it
-   finds is then shortcut: from every stop it tries to hop straight to the furthest later stop. Before it spends a hop
-   on a spot, it clicks any spot already in reach from where it stands (also after every landing and every click), so
-   clusters of spots cost no extra teleports.
+2. **Going to the closest spot: etherwarp only, no walking, no route search.** It picks the closest known spot and
+   heads straight for it. Each hop is found by looking at what real look rays do: many yaw/pitch angles around the
+   direction of the spot are traced with the same ray the server uses, every ray that ends on a valid etherwarp
+   target (never a wall) is a possible hop, and the one whose landing is closest to the spot wins; its angles are then
+   refined in small steps. This works on flat ground (where the ray you aim at a block lands several blocks before it)
+   and in forests alike. Hops are chained until a landing is in click range of the spot (4 blocks, clear view; plants do
+   not block it); if a route ends short, it plans again from where it landed (up to 6 times per spot). It runs on its
+   **own thread** over a terrain snapshot that the game thread fills 3 ms per tick, so planning never lags the game.
+   Before it spends a hop on a spot, it clicks any spot already in reach from where it stands (also after every landing and
+   every click), so clusters of spots cost no extra teleports.
    **Chained hops:** the macro stays crouched between hops and re-aims straight from the landing, so a long trip is
    a quick series of teleports.
    **Closer spot:** every 3 s it checks whether a known spot is much closer (at least 8 blocks and 40 % nearer)
@@ -54,9 +55,9 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    - **Ray:** an exact voxel walk (DDA) from the sneaking eye (feet + **1.27**). Only air and blocks without collision
      (grass, flowers) let it through. Fluids, signs, banners, heads, pressure plates and tripwire stop it.
      `/mudworm strict` makes it air-only.
-   - **Cone:** the centre ray must stop at the planned block, and 4 rays tilted by `coneDeg` (0.3°) must stop at a
-     valid target too (never a wall). On shallow angles over flat ground the landing can shift a few blocks, so after
-     each hop the route is re-planned from where you really are.
+   - **Cone:** the centre ray must stop at the planned block, and 4 rays tilted by `coneDeg` (0.1°) must also end on a valid
+     target or fly out of range (never a wall). On shallow angles over flat ground the landing can shift a few blocks,
+     so after each hop the route is re-planned from where you really are.
    - **Before every click:** the mod stands still, sneaks for at least 200 ms so the server knows, and traces the
      *real* ray again from the *real* position with the *real* yaw/pitch. If it does not stop at the planned block,
      nothing is sent. It re-aims, or plans again.
@@ -139,7 +140,7 @@ All settings, including `coneDeg`, `rangeMargin`, `reach`, `patrolStep` and `sca
 | `MudwormMod` | Entry point: tick, chat, key, commands, HUD, boxes |
 | `SpotScanner` | Finds spots (entity scan + particles), remembers sites |
 | `Etherwarp` | Etherwarp rules: item, range, target/ray block rules, DDA, aim cone, look angles |
-| `path/Pathfinder` | Etherwarp-only A* (fewest hops), runs on the planner thread |
+| `path/Pathfinder` | Finds the hops to the closest spot by tracing look rays (no route search), runs on the planner thread |
 | `path/WorldCache` | Terrain snapshot (one `Cell` per block) filled on the game thread, read by the planner |
 | `path/Cell` | Block facts (solid, air, fluid, hazard, leaves, etherwarp target…) packed in a short |
 | `Macro` | State machine: choose → plan → follow → warp → click |

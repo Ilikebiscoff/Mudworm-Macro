@@ -28,7 +28,7 @@ public final class Config {
      * every direction must still stop at a valid etherwarp target (never a wall). They may land a few blocks away from
      * the planned block (shallow angles over flat ground magnify tiny aim errors); the route is re-planned after landing.
      */
-    public static double coneDeg = 0.3;
+    public static double coneDeg = 0.1;
     /** Reach used to click a spot. */
     public static double reach = 4.0;
     /** Draw boxes on spots and the planned path. */
@@ -69,7 +69,7 @@ public final class Config {
         rangeMargin = d(p, "rangeMargin", rangeMargin);
         etherCost = d(p, "etherCost", etherCost);
         strictRay = b(p, "strictRay", strictRay);
-        coneDeg = d(p, "coneDeg", coneDeg);
+        coneDeg = d(p, "coneDegrees", coneDeg);
         reach = d(p, "reach", reach);
         esp = b(p, "esp", esp);
         hud = b(p, "hud", hud);
@@ -94,7 +94,7 @@ public final class Config {
         p.setProperty("rangeMargin", "" + rangeMargin);
         p.setProperty("etherCost", "" + etherCost);
         p.setProperty("strictRay", "" + strictRay);
-        p.setProperty("coneDeg", "" + coneDeg);
+        p.setProperty("coneDegrees", "" + coneDeg);
         p.setProperty("reach", "" + reach);
         p.setProperty("esp", "" + esp);
         p.setProperty("hud", "" + hud);

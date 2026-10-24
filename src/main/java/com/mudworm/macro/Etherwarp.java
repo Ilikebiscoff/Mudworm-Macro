@@ -139,23 +139,26 @@ public final class Etherwarp {
         return hit != null && validTarget(c, hit.getX(), hit.getY(), hit.getZ()) ? hit : null;
     }
 
-    /** Rays in the cone may land at most this far (blocks) from the planned target. */
-    private static final double MAX_SPREAD = 12.0;
-
     /**
-     * True when the centre ray stops at {@code target} and every ray in the cone around it stops at a valid
-     * etherwarp target (so a tiny aim error can never turn into a wall hit) not too far from it.
+     * The aim cone around a look direction is safe: rays tilted by {@link Config#coneDeg} in every direction either
+     * end on a valid etherwarp target or fly out of range. None of them ends on a wall. (A ray that ends on nothing
+     * just does not teleport, which is harmless.)
      */
-    public static boolean robust(Cells c, Vec3 eye, float yaw, float pitch, BlockPos target, double range) {
-        if (!target.equals(firstStop(c, eye, dir(yaw, pitch), range, false))) return false;
+    public static boolean coneSafe(Cells c, Vec3 eye, float yaw, float pitch, double range) {
         float j = (float) Config.coneDeg;
         float[][] offs = {{j, 0}, {-j, 0}, {0, j}, {0, -j}};
         for (float[] o : offs) {
             BlockPos hit = firstStop(c, eye, dir(yaw + o[0], pitch + o[1]), range, false);
-            if (hit == null || !validTarget(c, hit.getX(), hit.getY(), hit.getZ())) return false;
-            if (hit.distSqr(target) > MAX_SPREAD * MAX_SPREAD) return false;
+            if (hit == null) continue;
+            if (!validTarget(c, hit.getX(), hit.getY(), hit.getZ())) return false;
         }
         return true;
+    }
+
+    /** The centre ray stops at {@code target} and the cone around it is safe. */
+    public static boolean robust(Cells c, Vec3 eye, float yaw, float pitch, BlockPos target, double range) {
+        if (!target.equals(firstStop(c, eye, dir(yaw, pitch), range, false))) return false;
+        return coneSafe(c, eye, yaw, pitch, range);
     }
 
     /**

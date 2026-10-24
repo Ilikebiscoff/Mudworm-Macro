@@ -55,6 +55,8 @@ public final class Macro {
     /** Patrol goals further than this are pulled closer (the far end is not loaded yet). */
     private static final double MAX_GOAL_DIST = 90;
     private static final long PLAN_TIMEOUT_MS = 6000;
+    /** A route may end short of the spot; plan again from there at most this many times per spot. */
+    private static final int MAX_ROUTE_ROUNDS = 6;
     /** Time allowed at the final point to get a spot before it is blacklisted. */
     private static final long DIG_LIMIT_MS = 2000;
 
@@ -81,7 +83,7 @@ public final class Macro {
     private volatile List<Step> steps = new ArrayList<>();
     private volatile int stepIdx;
     private BlockPos patrolPoint;
-    private int replans;
+    private int replans, routeRounds;
     private final Set<Long> avoid = new HashSet<>();
 
     private final Map<BlockPos, Long> skipUntil = new HashMap<>();
@@ -335,6 +337,7 @@ public final class Macro {
         release(mc);
         aim.loose();
         replans = 0;
+        routeRounds = 0;
         approaching = null;
         if (now < etherOffUntil) {
             terrainWait = true;
@@ -576,7 +579,15 @@ public final class Macro {
         if (stepIdx >= list.size()) {
             release(mc);
             if (goal.spot() != null) {
-                enterDig(now);
+                if (clickPoint(mc.level, p, p.getEyePosition(), goal.spot()) != null) {
+                    enterDig(now);
+                } else if (++routeRounds > MAX_ROUTE_ROUNDS) {
+                    Chat.debug("Still not in reach after " + MAX_ROUTE_ROUNDS + " routes - skipping this spot for a minute.");
+                    skipGoal(now);
+                    stage = Stage.CHOOSE;
+                } else {
+                    beginPlan(mc, p, now); // partial route: continue from where we landed
+                }
             } else {
                 if (patrolPoint != null) patrolVisited.put(patrolPoint, now);
                 stage = Stage.CHOOSE;
@@ -638,7 +649,7 @@ public final class Macro {
         Vec3 eye = new Vec3(p.getX(), p.getY() + Etherwarp.SNEAK_EYE, p.getZ());
         float yaw = p.getYRot(), pitch = p.getXRot();
         BlockPos hit = Etherwarp.predict(live, eye, yaw, pitch, range);
-        if (hit != null && hit.distSqr(shot.target()) <= 16 && Etherwarp.robust(live, eye, yaw, pitch, hit, range)) {
+        if (hit != null && hit.distSqr(shot.target()) <= 100 && Etherwarp.coneSafe(live, eye, yaw, pitch, range)) {
             warpFrom = p.position();
             warpAt = now;
             mc.gameMode.useItem(p, InteractionHand.MAIN_HAND);
@@ -649,15 +660,10 @@ public final class Macro {
             status = "Etherwarp: teleporting";
             return;
         }
-        // not where the plan said (we stopped a bit off-centre, or the world changed): aim again from where we are
-        Etherwarp.Shot again = Etherwarp.shot(live, eye, shot.target(), range);
-        if (again == null) {
-            Chat.log("Etherwarp refused: ray ends on " + (hit == null ? "an invalid block / nothing" : hit.toShortString())
-                    + " but the plan wanted " + shot.target().toShortString());
-            replan(mc, p, now, "target not visible from here");
-            return;
-        }
-        shot = again;
+        // the real angles do not end where the plan said (small aim error on a shallow ray): plan again from here
+        Chat.log("Etherwarp refused: the ray ends on " + (hit == null ? "an invalid block / nothing" : hit.toShortString())
+                + " but the plan wanted " + shot.target().toShortString());
+        replan(mc, p, now, "aim did not match the plan");
     }
 
     private void warpWait(Minecraft mc, LocalPlayer p, long now) {

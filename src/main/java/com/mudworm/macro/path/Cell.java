@@ -72,7 +72,7 @@ public final class Cell {
                 && !(b instanceof BasePressurePlateBlock || b instanceof TripWireBlock || b instanceof ButtonBlock)) {
             f |= RAYPASS;
         }
-        if (coll && !wet && !Etherwarp.interactable(s) && s.isCollisionShapeFullBlock(level, pos)) f |= TARGET;
+        if (coll && !wet && (f & HAZARD) == 0 && !Etherwarp.interactable(s) && s.isCollisionShapeFullBlock(level, pos)) f |= TARGET;
         return (short) f;
     }
 
