@@ -55,6 +55,18 @@ public final class Config {
      * whatever combination points at it, without turning the head. 0 = off.
      */
     public static double scootRange = 6.0;
+    /**
+     * Only spots at most this many blocks away (3D, from you) are chosen as targets. Farther ones are ignored: the
+     * game keeps their strings loaded from 100+ blocks away, and hopping towards them (or towards ones on another
+     * level) looks like teleporting around for no reason.
+     */
+    public static double maxTargetDistance = 50;
+    /**
+     * Fewer than this many live spots in the lobby: refresh the lobby (/is, then /warp murk). 0 = never.
+     * At least {@link #refreshCooldownSeconds} must have passed since the last lobby switch.
+     */
+    public static int minSpots = 3;
+    public static int refreshCooldownSeconds = 45;
     /** How long one scoot (walking the last blocks) may last, in seconds. */
     public static double scootSeconds = 1.5;
     /** Use an axe for breaking the spot blocks: the hotbar item whose name contains {@link #axeName} is held while nuking. */
@@ -106,6 +118,9 @@ public final class Config {
         areaMargin = Math.max(0, i(p, "areaMargin", areaMargin));
         scootRange = Math.max(0, Math.min(30, d(p, "scootRange", scootRange)));
         maxTargetDistance = Math.max(10, Math.min(400, d(p, "maxTargetDistance", maxTargetDistance)));
+        maxTargetDistance = Math.max(10, Math.min(400, d(p, "maxTargetDistance", maxTargetDistance)));
+        minSpots = Math.max(0, Math.min(50, i(p, "minSpots", minSpots)));
+        refreshCooldownSeconds = Math.max(5, Math.min(600, i(p, "refreshCooldown", refreshCooldownSeconds)));
         scootSeconds = Math.max(0.2, Math.min(10, d(p, "scootSeconds", scootSeconds)));
         useAxe = b(p, "useAxe", useAxe);
         axeName = p.getProperty("axeName", axeName).trim();
@@ -140,6 +155,9 @@ public final class Config {
         p.setProperty("areaMargin", "" + areaMargin);
         p.setProperty("scootRange", "" + scootRange);
         p.setProperty("maxTargetDistance", "" + maxTargetDistance);
+        p.setProperty("maxTargetDistance", "" + maxTargetDistance);
+        p.setProperty("minSpots", "" + minSpots);
+        p.setProperty("refreshCooldown", "" + refreshCooldownSeconds);
         p.setProperty("scootSeconds", "" + scootSeconds);
         p.setProperty("useAxe", "" + useAxe);
         p.setProperty("axeName", axeName);

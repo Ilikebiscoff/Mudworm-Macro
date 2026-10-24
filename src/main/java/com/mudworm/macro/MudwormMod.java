@@ -240,6 +240,22 @@ public final class MudwormMod implements ClientModInitializer {
                 Chat.msg("Only spots within " + Config.maxTargetDistance + " blocks are targeted; farther ones are ignored.");
                 return 1;
             })));
+            root.then(lit("minspots").then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("count",
+                    IntegerArgumentType.integer(0, 50)).executes(c -> {
+                Config.minSpots = IntegerArgumentType.getInteger(c, "count");
+                Config.save();
+                Chat.msg(Config.minSpots <= 0 ? "Lobby refresh is off." : "Fewer than " + Config.minSpots
+                        + " live spots in the lobby: it runs /is then /warp murk for a new lobby (cooldown "
+                        + Config.refreshCooldownSeconds + " s between switches).");
+                return 1;
+            })));
+            root.then(lit("refreshcooldown").then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("seconds",
+                    IntegerArgumentType.integer(5, 600)).executes(c -> {
+                Config.refreshCooldownSeconds = IntegerArgumentType.getInteger(c, "seconds");
+                Config.save();
+                Chat.msg("At least " + Config.refreshCooldownSeconds + " s between lobby switches.");
+                return 1;
+            })));
             root.then(lit("scoot").then(RequiredArgumentBuilder.<FabricClientCommandSource, Double>argument("blocks",
                     DoubleArgumentType.doubleArg(0, 30)).executes(c -> {
                 Config.scootRange = DoubleArgumentType.getDouble(c, "blocks");
@@ -307,6 +323,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm update | update check | version",
                 "/mudworm axe (takes the item in your hand) | axe off | axe name <text>  (use an axe for mining spots)",
                 "/mudworm blatant  (silent etherwarp aim: asks for a 2-step confirmation, off at every start)",
+                "/mudworm minspots <n> | refreshcooldown <seconds>  (fewer than n spots in the lobby: /is then /warp murk, 0 = off)",
                 "/mudworm maxdist <blocks>  (spots farther than this are never targeted, default 50)",
                 "/mudworm scoottime <seconds> | scoot <blocks>  (walk to spots this close with WASD, 0 = off)",
                 "/mudworm hopdelay <ms>  (extra wait before each teleport, default 250)",

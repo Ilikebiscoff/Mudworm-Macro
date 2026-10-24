@@ -50,6 +50,11 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    walk you off an edge); if it is blocked or makes no progress for 0.7 s it gives up and teleports instead. Change the
    range with `/mudworm scoot <blocks>` (0 = off). One scoot lasts at most 1.5 s (`/mudworm scoottime <seconds>`), and
    when it ends the "not moving for 3 s -> /warp murk" timer starts again from zero.
+   **Lobby refresh:** if the lobby has fewer than 3 live spots (`/mudworm minspots <n>`, 0 = off), once its spots had
+   6 s to load, the macro runs `/is`, waits for the island, pauses 3.5 s and runs `/warp murk`, which gives a fresh
+   lobby. At least 45 s must have passed since the last lobby switch (`/mudworm refreshcooldown <seconds>`), so it never
+   switches too quickly; if the cooldown has not passed it carries on with what is there. If 8 fresh lobbies in a row
+   have too few spots, it stops (lower `minspots`).
    **Slower hops, less mana:** every teleport waits an extra 250 ms once it is lined up (`/mudworm hopdelay <ms>`).
    **Chained hops:** the macro stays crouched between hops and re-aims straight from the landing, so a long trip is
    a quick series of teleports.
@@ -141,6 +146,7 @@ Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and 
 | `/mudworm axe` | Takes the name of the item in your hand and uses it (an axe) for mining spots |
 | `/mudworm axe off`, `axe name <text>` | Turn the axe off / set the hotbar item name by hand |
 | `/mudworm blatant`, `blatant unlock`, `blatant on <phrase>`, `blatant off` | Silent etherwarp aim without moving the camera; two-step confirmation |
+| `/mudworm minspots <n>`, `refreshcooldown <seconds>` | Fewer than n live spots in the lobby: `/is` then `/warp murk` for a new lobby (default 3, cooldown 45 s) |
 | `/mudworm maxdist <blocks>` | Spots farther than this are never targeted (default 50) |
 | `/mudworm scoottime <seconds>` | Longest one scoot may last (default 1.5) |
 | `/mudworm hopdelay <ms>` | Extra wait before every teleport (default 250): slower hops cost less mana |

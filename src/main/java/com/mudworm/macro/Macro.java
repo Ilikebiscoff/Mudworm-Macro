@@ -53,6 +53,11 @@ public final class Macro {
     /** Patrol goals further than this are pulled closer (the far end is not loaded yet). */
     private static final double MAX_GOAL_DIST = 90;
     private static final long PLAN_TIMEOUT_MS = 6000;
+    /** After arriving in a lobby, wait this long for the spots to load before counting them. */
+    private static final long LOBBY_SETTLE_MS = 6000;
+    /** Pause between /is arriving and /warp murk (the server limits quick switching). */
+    private static final long REFRESH_GAP_MS = 3500;
+    private static final int MAX_REFRESHES_IN_A_ROW = 8;
     /** One break every this many client ticks (3 ticks = 150 ms). */
     private static final int NUKE_GAP_TICKS = 3;
     /** Do not send another break for the same spot sooner than this (waiting for the server). */
@@ -115,6 +120,11 @@ public final class Macro {
     // digging
     private long digAt, digSince, lastSwing, idleSince;
     // scoot: walk the last few blocks with W/A/S/D, camera untouched
+    // lobby refresh (/is then /warp murk) when the lobby has too few spots
+    private String pendingCommand;
+    private long sendPendingAt, lastSwitchAt, settleUntil;
+    private boolean refreshing;
+    private int refreshesInARow;
     private long scootStart, scootProgressAt;
     private double scootBest;
     private final Map<BlockPos, Long> scootBlocked = new HashMap<>();
@@ -249,6 +259,8 @@ public final class Macro {
             scootBlocked.clear();
             patrolVisited.clear();
             avoid.clear();
+            lastSwitchAt = now;
+            settleUntil = now + LOBBY_SETTLE_MS;
         }
         Vec3 pos = p.position();
 
@@ -260,6 +272,13 @@ public final class Macro {
                 warping = false;
                 resumeAt = now + (moved ? 2000 : 500);
                 afterTeleport(pos, now);
+                settleUntil = now + LOBBY_SETTLE_MS;
+                if (pendingCommand != null) sendPendingAt = now + REFRESH_GAP_MS; // /is arrived: /warp murk comes next
+                else if (refreshing) {
+                    refreshing = false;
+                    lastSwitchAt = now;
+                    Chat.msg("Lobby refreshed.");
+                }
             }
             return;
         }
@@ -267,6 +286,17 @@ public final class Macro {
             status = "Settling";
             release(mc);
             lastPos = pos;
+            return;
+        }
+        if (pendingCommand != null) { // refreshing the lobby: second command after a pause
+            status = "Refreshing lobby: /" + pendingCommand + " in " + Math.max(0, (sendPendingAt - now) / 1000 + 1) + " s";
+            release(mc);
+            lastPos = pos;
+            if (now >= sendPendingAt) {
+                String c = pendingCommand;
+                pendingCommand = null;
+                beginWarp(mc, p, now, c);
+            }
             return;
         }
         if (lastPos != null && pos.distanceTo(lastPos) > 6 && stage != Stage.WARP_WAIT && Config.stopOnForeignTeleport) {
@@ -340,6 +370,12 @@ public final class Macro {
             stop(mc, "still stuck after /" + cmd + " 3 times");
             return;
         }
+        Chat.msg(reason + " - /" + cmd + " (stage " + stage + ", " + status + ")");
+        beginWarp(mc, p, now, cmd);
+    }
+
+    /** Sends a command that moves us and waits for the teleport / world change (handled at the top of tick()). */
+    private void beginWarp(Minecraft mc, LocalPlayer p, long now, String cmd) {
         release(mc);
         cancelPlan();
         steps = new ArrayList<>();
@@ -349,7 +385,40 @@ public final class Macro {
         warpPos = p.position();
         warpLevel = mc.level;
         warpWaitUntil = now + 15_000;
-        Chat.msg(reason + " - /" + cmd + " (stage " + stage + ", " + status + ")");
+    }
+
+    /** Live spots in the lobby (strings in view), not counting blacklisted ones. */
+    private int liveSpots(ClientLevel lv) {
+        int n = 0;
+        for (BlockPos s : SpotScanner.SPOTS.keySet()) {
+            if (!SpotScanner.BLACKLIST.contains(s) && SpotScanner.alive(lv, s)) n++;
+        }
+        return n;
+    }
+
+    /**
+     * Too few spots in this lobby: leave it. /is (private island) then /warp murk gives a fresh lobby. Not before the
+     * lobby had time to load its spots, and not before the cooldown since the last lobby switch has passed.
+     */
+    private boolean maybeRefreshLobby(Minecraft mc, LocalPlayer p, long now) {
+        if (Config.minSpots <= 0 || now < settleUntil) return false;
+        int n = liveSpots(mc.level);
+        if (n >= Config.minSpots) return false;
+        long wait = Config.refreshCooldownSeconds * 1000L - (now - lastSwitchAt);
+        if (wait > 0) {
+            Chat.debug("Only " + n + " spots (minimum " + Config.minSpots + ") but the lobby-switch cooldown has " + wait / 1000 + " s left.");
+            return false;
+        }
+        if (++refreshesInARow > MAX_REFRESHES_IN_A_ROW) {
+            stop(mc, "the last " + MAX_REFRESHES_IN_A_ROW + " lobbies all had fewer than " + Config.minSpots + " spots - lower /mudworm minspots");
+            return true;
+        }
+        Chat.msg("Only " + n + " spots in this lobby (minimum " + Config.minSpots + ") - refreshing: /is, then /warp murk");
+        refreshing = true;
+        lastSwitchAt = now;
+        pendingCommand = "warp murk";
+        beginWarp(mc, p, now, "is");
+        return true;
     }
 
     // ---- choosing a goal ------------------------------------------------------------------------------------
@@ -370,6 +439,7 @@ public final class Macro {
             status = "Scanning terrain";
             return;
         }
+        if (maybeRefreshLobby(mc, p, now)) return;
         BlockPos near = spotInReach(mc, p);
         if (near != null || nearestSpot(p) != null) idleSince = 0;
         if (near != null) { // already close enough to another spot: no hop needed
@@ -1006,6 +1076,7 @@ public final class Macro {
             if (SpotScanner.SPOTS.containsKey(s)) {
                 spotsDone++;
                 warpsSinceSpot = 0;
+                refreshesInARow = 0;
                 Chat.log("Spot " + s.toShortString() + " collected");
                 SpotScanner.remove(s);
             }
@@ -1130,6 +1201,10 @@ public final class Macro {
             var pl = mc.player;
             if (pl != null && Math.sqrt(sp.distToCenterSqr(pl.position())) > Config.maxTargetDistance) far++;
         }
+        b.append("live spots in lobby: ").append(mc.level == null ? 0 : liveSpots(mc.level)).append(" (refresh below ").append(Config.minSpots)
+                .append(", cooldown ").append(Config.refreshCooldownSeconds).append(" s, last switch ").append((now - lastSwitchAt) / 1000)
+                .append(" s ago, settling ").append(Math.max(0, (settleUntil - now) / 1000)).append(" s)   refreshing: ").append(refreshing)
+                .append("   refreshes in a row: ").append(refreshesInARow).append('\n');
         b.append("max target distance: ").append(Config.maxTargetDistance).append(" blocks (").append(far).append(" known spots are farther and ignored)\n");
         b.append("scoot range: ").append(Config.scootRange).append(" blocks   scoot-blocked spots: ").append(scootBlocked.size()).append('\n');
         b.append("skipped spots: ").append(skipUntil.size()).append("   avoid cells: ").append(avoid.size()).append("   replans: ").append(replans).append('\n');
