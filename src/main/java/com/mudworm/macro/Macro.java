@@ -529,6 +529,8 @@ public final class Macro {
 
     /** True when some landing within reach has a clear view of the spot (it is not walled in). Unknown terrain counts as yes. */
     public boolean isExposed(BlockPos s) {
+        var pl = Minecraft.getInstance().player;
+        if (pl != null && pl.getEyePosition().distanceToSqr(s.getCenter()) <= Config.reach * Config.reach) return true; // in nuke reach: never "walled in"
         long now = System.currentTimeMillis();
         long[] c = exposedCache.get(s);
         if (c != null && now - c[0] < 8000) return c[1] == 1;
