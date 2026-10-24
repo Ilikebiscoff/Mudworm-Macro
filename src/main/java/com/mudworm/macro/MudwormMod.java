@@ -214,7 +214,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
                 "/mudworm update | update check | version",
-                "/mudworm hopdelay <ms>  (extra wait before each teleport, default 400)",
+                "/mudworm hopdelay <ms>  (extra wait before each teleport, default 250)",
                 "/mudworm yband <below> <above>  (how far hops may stray up/down from the way to the spot)",
                 "/mudworm blacklist | blacklist clear",
                 "/mudworm sites clear | reload")) Chat.msg(s);
