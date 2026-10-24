@@ -84,6 +84,13 @@ gradle build      # JDK 25, Gradle 9.4+
 The jar lands in `build/libs/`. Every push also builds on GitHub Actions and publishes the jar as the
 `latest-build` pre-release.
 
+## Updating
+
+On your first world join of each launch the mod quietly checks the `latest-build` release of this repo and says in
+chat when a newer jar exists. `/mudworm update` downloads it into the mods folder (size and SHA-256 are checked
+against the release digest, and the file must be this mod), then restart the game (Modrinth App: Stop, then Play).
+The old jar is deleted automatically. `/mudworm update check` only reports. The repo must be public for the check to work.
+
 ## Use
 
 1. Go to the Moonglade Marsh with the AOTV in your hotbar.
@@ -108,6 +115,7 @@ Boxes: green = spot, yellow = current goal, cyan line = walking path, magenta li
 | `/mudworm ethercost <blocks>` | How many walked blocks one etherwarp is worth (lower = more teleports) |
 | `/mudworm area marsh`, `area here <radius>` | Patrol area |
 | `/mudworm sites clear` | Forget every remembered spot site |
+| `/mudworm update`, `update check`, `version` | Download the newest `latest-build` jar / only check / show the installed version |
 | `/mudworm reload` | Re-read `config/mudworm-macro.properties` |
 
 All settings, including `jitterDeg`, `rangeMargin`, `reach`, `patrolStep` and `scanMinY`/`scanMaxY`, are in

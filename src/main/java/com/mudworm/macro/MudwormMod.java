@@ -34,6 +34,9 @@ public final class MudwormMod implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         Config.load();
+        Updater.cleanOld();
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register(
+                (handler, sender, client) -> Updater.onJoin());
         SpotScanner.loadSites();
 
         KeyMapping toggle = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.mudwormmacro.toggle",
@@ -63,6 +66,19 @@ public final class MudwormMod implements ClientModInitializer {
             root.then(lit("stop").executes(c -> run(mc -> M.stop(mc, null))));
             root.then(lit("toggle").executes(c -> run(M::toggle)));
             root.then(lit("help").executes(c -> help()));
+            root.then(lit("version").executes(c -> {
+                Chat.msg(Updater.versionInfo());
+                return 1;
+            }));
+            root.then(lit("update")
+                    .executes(c -> {
+                        Updater.run(false, true);
+                        return 1;
+                    })
+                    .then(lit("check").executes(c -> {
+                        Updater.run(false, false);
+                        return 1;
+                    })));
             root.then(lit("status").executes(c -> {
                 Chat.msg(M.status() + " | spots known: " + SpotScanner.SPOTS.size() + " | sites: "
                         + SpotScanner.SITES.size() + " | done: " + M.spotsDone + " | warps: " + M.warps);
@@ -170,6 +186,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm stuckwarp | stuckcmd <command> | stucktime <seconds>",
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
+                "/mudworm update | update check | version",
                 "/mudworm sites clear | reload")) Chat.msg(s);
         return 1;
     }
