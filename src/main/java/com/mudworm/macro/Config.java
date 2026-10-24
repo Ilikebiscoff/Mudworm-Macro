@@ -59,7 +59,7 @@ public final class Config {
     public static double scootSeconds = 1.5;
     /** Use an axe for breaking the spot blocks: the hotbar item whose name contains {@link #axeName} is held while nuking. */
     public static boolean useAxe = false;
-    public static String axeName = "axe";
+    public static String axeName = "Helix Chopper";
     /**
      * BLATANT MODE (never saved, off at every start): etherwarps send the aim to the server without moving the camera.
      * Turned on with a two-step confirmation: /mudworm blatant unlock, then /mudworm blatant on <phrase>.

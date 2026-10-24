@@ -76,7 +76,7 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
      warps in a row that do nothing (no mana, server refused) make it run the stuck command (`/warp murk`).
    - **Range:** 57 + the item's `tuned_transmission` (Transmission Tuners, max +4 = 61), minus a 1.5-block margin.
    **Axe:** `/mudworm axe` toggles using an axe for mining spots; `/mudworm axe name <text>` sets which hotbar item
-   (any item whose name contains the text, default `axe`, not case sensitive). It is held while nuking; the Aspect of
+   (any item whose name contains the text, default `Helix Chopper`, not case sensitive). It is held while nuking; the Aspect of
    the Void is picked again for the next teleport.
    **Blatant mode (off at every start):** etherwarps normally turn the camera to the shot angle. In blatant mode the
    camera does not move at all: the use packet is sent with the shot angles and the camera is left alone. That is much
