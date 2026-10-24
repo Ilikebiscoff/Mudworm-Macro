@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "mudwormmacro",
+  "version": "${version}",
+  "name": "Mudworm Macro",
+  "description": "Galatea floor drop (mudworm) macro: finds every spot, walks and etherwarps to it, and clicks it.",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.mudworm.macro.MudwormMod"]
+  },
+  "mixins": [
+    { "config": "mudwormmacro.mixins.json", "environment": "client" }
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "minecraft": "26.1.*",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
