@@ -1,5 +1,6 @@
 package com.mudworm.macro;
 
+import com.mudworm.macro.path.Cell;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
