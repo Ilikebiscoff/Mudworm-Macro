@@ -82,6 +82,7 @@ public final class Macro {
     private String status = "Stopped";
     private ClientLevel startLevel;
     private boolean terrainWait;
+    private int idleStrikes; // times in a row we waited stuckSeconds with no spot in view
 
     private Pathfinder.Goal goal;
     /** Set while hopping to the area around a spot we could not plan a click position for. */
@@ -449,7 +450,7 @@ public final class Macro {
         }
         if (maybeRefreshLobby(mc, p, now)) return;
         BlockPos near = spotInReach(mc, p);
-        if (near != null || nearestSpot(p) != null) idleSince = 0;
+        if (near != null || nearestSpot(p) != null) { idleSince = 0; idleStrikes = 0; }
         if (near != null) { // already close enough to another spot: no hop needed
             goal = Pathfinder.Goal.spot(near);
             patrolPoint = null;
@@ -478,6 +479,15 @@ public final class Macro {
         if (idleSince == 0) idleSince = now;
         if (Config.unstuckWarp && now - idleSince > Config.stuckSeconds * 1000L) {
             idleSince = 0;
+            if (++idleStrikes >= 2) { // /warp murk did not bring a spot into view: swap the lobby
+                idleStrikes = 0;
+                Chat.msg("No spot in view for " + Config.stuckSeconds + " s twice in a row - swapping lobby: /is, then /warp murk");
+                refreshing = true;
+                lastSwitchAt = now;
+                pendingCommand = "warp murk";
+                beginWarp(mc, p, now, "is");
+                return;
+            }
             stuckWarp(mc, p, now, "No spot in view and not moving for " + Config.stuckSeconds + " s");
         }
     }
