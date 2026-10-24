@@ -157,6 +157,13 @@ public final class MudwormMod implements ClientModInitializer {
                         Chat.msg("Blacklist cleared.");
                         return 1;
                     })));
+            root.then(lit("hopdelay").then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("ms",
+                    IntegerArgumentType.integer(0, 5000)).executes(c -> {
+                Config.hopDelayMs = IntegerArgumentType.getInteger(c, "ms");
+                Config.save();
+                Chat.msg("Extra wait before every etherwarp: " + Config.hopDelayMs + " ms.");
+                return 1;
+            })));
             root.then(lit("yband")
                     .then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("below", IntegerArgumentType.integer(0, 200))
                             .then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("above", IntegerArgumentType.integer(0, 200))
@@ -207,6 +214,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
                 "/mudworm update | update check | version",
+                "/mudworm hopdelay <ms>  (extra wait before each teleport, default 400)",
                 "/mudworm yband <below> <above>  (how far hops may stray up/down from the way to the spot)",
                 "/mudworm blacklist | blacklist clear",
                 "/mudworm sites clear | reload")) Chat.msg(s);

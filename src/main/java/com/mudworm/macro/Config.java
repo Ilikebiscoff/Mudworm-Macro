@@ -50,6 +50,8 @@ public final class Config {
      * keeps the macro off trees, cliffs and islands that are not on the way.
      */
     public static int landBelow = 10, landAbove = 12, areaMargin = 30;
+    /** Extra wait (ms) before every etherwarp once it is lined up. Slower hops cost less mana per minute. */
+    public static int hopDelayMs = 400;
     /** Terrain snapshot radius in chunks around the player. */
     public static int cacheChunks = 7;
 
@@ -87,6 +89,7 @@ public final class Config {
         landBelow = Math.max(0, i(p, "landBelow", landBelow));
         landAbove = Math.max(0, i(p, "landAbove", landAbove));
         areaMargin = Math.max(0, i(p, "areaMargin", areaMargin));
+        hopDelayMs = Math.max(0, Math.min(5000, i(p, "hopDelayMs", hopDelayMs)));
         cacheChunks = Math.max(2, Math.min(12, i(p, "cacheChunks", cacheChunks)));
         areaMinX = i(p, "areaMinX", areaMinX);
         areaMaxX = i(p, "areaMaxX", areaMaxX);
@@ -115,6 +118,7 @@ public final class Config {
         p.setProperty("landBelow", "" + landBelow);
         p.setProperty("landAbove", "" + landAbove);
         p.setProperty("areaMargin", "" + areaMargin);
+        p.setProperty("hopDelayMs", "" + hopDelayMs);
         p.setProperty("cacheChunks", "" + cacheChunks);
         p.setProperty("areaMinX", "" + areaMinX);
         p.setProperty("areaMaxX", "" + areaMaxX);

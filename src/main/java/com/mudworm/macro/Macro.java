@@ -56,6 +56,10 @@ public final class Macro {
     private static final long RESCAN_MS = 5000;
     /** A different spot must be at least this many blocks nearer to count (so equal distances do not flip-flop). */
     private static final double SWITCH_MARGIN = 2.0;
+    /** Every this often the nearest visible spot is looked up again and the macro switches to it if it is another one. */
+    private static final long RESCAN_MS = 5000;
+    /** A different spot must be at least this many blocks nearer to count (so equal distances do not flip-flop). */
+    private static final double SWITCH_MARGIN = 2.0;
     /** A route may end short of the spot; plan again from there at most this many times per spot. */
     private static final int MAX_ROUTE_ROUNDS = 6;
     /** Time allowed at the final point to get a spot before it is blacklisted. */
@@ -78,6 +82,7 @@ public final class Macro {
     private Pathfinder.Goal goal;
     /** Set while hopping to the area around a spot we could not plan a click position for. */
     private BlockPos approaching;
+    private long lastRescan;
     private long lastRescan;
     private final Map<BlockPos, Integer> planFails = new HashMap<>();
     private Pathfinder planner;
@@ -105,7 +110,7 @@ public final class Macro {
 
     // etherwarp
     private Etherwarp.Shot shot;
-    private long prepSince, sneakSince, warpAt;
+    private long prepSince, sneakSince, warpAt, readySince;
     private Vec3 warpFrom;
     private int warpFails;
     private long etherOffUntil, noManaUntil, nextSlotChange;
@@ -447,6 +452,22 @@ public final class Macro {
         return true;
     }
 
+    /** Every 5 s: is the nearest visible spot a different one from the one we are heading for? Then go for that one. */
+    private boolean nearerSpotNow(LocalPlayer p, long now) {
+        if (now - lastRescan < RESCAN_MS) return false;
+        lastRescan = now;
+        BlockPos best = nearestSpot(p);
+        if (best == null) return false;
+        if (goal == null || goal.spot() == null) return true; // patrolling and a spot is in view
+        if (best.equals(goal.spot())) return false;
+        double dBest = Math.sqrt(best.distToCenterSqr(p.position()));
+        double dCur = Math.sqrt(goal.spot().distToCenterSqr(p.position()));
+        if (dBest + SWITCH_MARGIN >= dCur) return false;
+        Chat.debug("Nearest spot is now " + best.toShortString() + " (" + (int) dBest + " blocks) instead of "
+                + goal.spot().toShortString() + " (" + (int) dCur + ") - switching.");
+        return true;
+    }
+
     /** Known spot sites first (nearest not visited lately), then a grid over the patrol area. */
     private BlockPos nextPatrolPoint(LocalPlayer p, long now) {
         for (var it = patrolVisited.entrySet().iterator(); it.hasNext(); ) {
@@ -531,6 +552,7 @@ public final class Macro {
             stepIdx = 0;
             planner = null;
             lastRescan = now;
+            lastRescan = now;
             Chat.debug("Path: " + steps.size() + " etherwarps (" + (now - planStart) + " ms)");
             stage = Stage.FOLLOW;
             return;
@@ -590,6 +612,11 @@ public final class Macro {
             stage = Stage.CHOOSE;
             return;
         }
+        if (nearerSpotNow(p, now)) { // 5 s rescan: another spot is the nearest now
+            release(mc);
+            stage = Stage.CHOOSE;
+            return;
+        }
         List<Step> list = steps;
         if (stepIdx >= list.size()) {
             release(mc);
@@ -613,6 +640,7 @@ public final class Macro {
         prepSince = now;
         if (!p.isShiftKeyDown()) sneakSince = 0; // already sneaking from the last hop: no need to wait for it again
         aim.precise();
+        readySince = 0;
         stage = Stage.WARP_PREP;
     }
 
@@ -640,7 +668,7 @@ public final class Macro {
             sneakSince = 0;
         }
         aim.setTarget(shot.yaw(), shot.pitch(), 2500f, 1.6f);
-        if (now - prepSince > 3000) {
+        if (now - prepSince > 3000 + Config.hopDelayMs) {
             replan(mc, p, now, "could not line up the etherwarp");
             return;
         }
@@ -655,7 +683,15 @@ public final class Macro {
         boolean aimed = aim.settled(p, Math.max(0.1f, aimStep(mc) * 0.75f));
         prepWhy = (sneakOk ? "sneak ok" : "waiting for sneak") + ", " + (still ? "still" : "moving/airborne")
                 + ", " + (aimed ? "aimed" : String.format("aiming (err yaw %.2f pitch %.2f)", yawErr, pitchErr));
-        if (!sneakOk || !still || !aimed) return; // let the server see the sneak, stand still, hold the aim
+        if (!sneakOk || !still || !aimed) { // let the server see the sneak, stand still, hold the aim
+            readySince = 0;
+            return;
+        }
+        if (readySince == 0) readySince = now;
+        if (now - readySince < Config.hopDelayMs) { // extra wait between teleports: saves mana
+            prepWhy += ", waiting " + (Config.hopDelayMs - (now - readySince)) + " ms (hop delay)";
+            return;
+        }
 
         // the safety check: trace the REAL look ray from the REAL sneaking eye, exactly as the server will.
         // It has to end on a valid target close to the planned one (never a wall); after landing we re-plan anyway.
