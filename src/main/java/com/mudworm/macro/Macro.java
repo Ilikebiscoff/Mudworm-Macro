@@ -57,8 +57,6 @@ public final class Macro {
     private static final int NUKE_GAP_TICKS = 3;
     /** Do not send another break for the same spot sooner than this (waiting for the server). */
     private static final long NUKE_RETRY_MS = 500;
-    /** No spot in view for this long: run the stuck command (/warp murk) to get somewhere with spots. */
-    private static final long IDLE_WARP_MS = 8000;
     /** A different spot must be at least this many blocks nearer to count (so equal distances do not flip-flop). */
     private static final double SWITCH_MARGIN = 1.0;
     /** A route may end short of the spot; plan again from there at most this many times per spot. */
@@ -387,9 +385,9 @@ public final class Macro {
         goal = null;
         patrolPoint = null;
         if (idleSince == 0) idleSince = now;
-        if (Config.unstuckWarp && now - idleSince > IDLE_WARP_MS) {
+        if (Config.unstuckWarp && now - idleSince > Config.stuckSeconds * 1000L) {
             idleSince = 0;
-            stuckWarp(mc, p, now, "No spot in view for " + IDLE_WARP_MS / 1000 + " s");
+            stuckWarp(mc, p, now, "No spot in view and not moving for " + Config.stuckSeconds + " s");
         }
     }
 

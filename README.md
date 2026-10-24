@@ -28,7 +28,7 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    client has loaded, groups the string ones by block, and records each block with 3 strings as a spot. That covers
    everything inside the server's entity range, not only what is close enough to send particles. Particles are also
    watched as a second trigger. The server never sends the far side of the island, so when no spot is known the
-   macro waits for one to come into view; if none shows up for 8 s it runs the stuck command (`/warp murk`).
+   macro waits for one to come into view; if none shows up and you do not move for 3 s it runs the stuck command (`/warp murk`).
 2. **Going to the closest spot: etherwarp only, no walking, no route search.** It picks the nearest spot it can see is
    alive right now and heads for it. **After every etherwarp it checks again** and, if another spot is now the nearest, switches
    to that one. It collects it, then picks the next nearest. (Spots it remembers but cannot see are not
@@ -101,7 +101,7 @@ The old jar is deleted automatically. `/mudworm update check` only reports. The 
 
 1. Go to the Moonglade Marsh with the AOTV in your hotbar.
 2. Press **K** (rebindable in Controls) or run `/mudworm start`.
-3. It finds spots, teleports to them, and clicks them. It only teleports once it has selected a spot: with none in sight it waits (and runs the stuck command after 8 s). Press **K** again or `/mudworm stop`.
+3. It finds spots, teleports to them, and clicks them. It only teleports once it has selected a spot: with none in sight it waits (and runs the stuck command after 3 s without moving). Press **K** again or `/mudworm stop`.
 
 Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and box = planned etherwarp hops and their targets.
 
