@@ -422,6 +422,45 @@ public final class Macro {
         return best;
     }
 
+    /** Extra distance (blocks) counted against a spot that is walled in: spots with a clear view are preferred. */
+    private static final double WALLED_PENALTY = 25;
+    private final Map<BlockPos, long[]> exposedCache = new HashMap<>();
+
+    /** True when some landing within reach has a clear view of the spot (it is not walled in). Unknown terrain counts as yes. */
+    public boolean isExposed(BlockPos s) {
+        long now = System.currentTimeMillis();
+        long[] c = exposedCache.get(s);
+        if (c != null && now - c[0] < 8000) return c[1] == 1;
+        boolean r = computeExposed(s);
+        exposedCache.put(s, new long[]{now, r ? 1 : 0});
+        return r;
+    }
+
+    private boolean computeExposed(BlockPos s) {
+        var rd = cache.reader();
+        double reach = Config.reach - 0.3;
+        int rad = (int) Math.ceil(reach) + 1;
+        boolean sawChunk = false;
+        Vec3[] aims = {new Vec3(s.getX() + 0.5, s.getY() + 0.95, s.getZ() + 0.5), s.getCenter()};
+        for (int cx = (s.getX() - rad) >> 4; cx <= (s.getX() + rad) >> 4; cx++) {
+            for (int cz = (s.getZ() - rad) >> 4; cz <= (s.getZ() + rad) >> 4; cz++) {
+                long[] ts = rd.targets(cx, cz);
+                if (ts == null) continue;
+                sawChunk = true;
+                for (long t : ts) {
+                    int tx = BlockPos.getX(t), ty = BlockPos.getY(t), tz = BlockPos.getZ(t);
+                    if (Math.abs(tx - s.getX()) > rad || Math.abs(tz - s.getZ()) > rad || Math.abs(ty - s.getY()) > rad) continue;
+                    Vec3 eye = new Vec3(tx + 0.5, ty + 2.5, tz + 0.5); // standing on that block
+                    if (eye.distanceToSqr(s.getCenter()) > reach * reach) continue;
+                    for (Vec3 a : aims) {
+                        if (s.equals(Etherwarp.firstSolid(rd, eye, a.subtract(eye).normalize(), eye.distanceTo(a) + 0.5))) return true;
+                    }
+                }
+            }
+        }
+        return !sawChunk;
+    }
+
     /**
      * The nearest spot we can see is alive right now (its strings are in view). Remembered spots we cannot see are not
      * targets: they may be used up already. We stay on the chosen spot until it is collected or given up.
@@ -433,7 +472,8 @@ public final class Macro {
         if (lv == null) return null;
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
             if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s) || !SpotScanner.alive(lv, s)) continue;
-            double d = s.distToCenterSqr(p.position());
+            double d = Math.sqrt(s.distToCenterSqr(p.position()));
+            if (!isExposed(s)) d += WALLED_PENALTY;
             if (d < bd) {
                 bd = d;
                 best = s;

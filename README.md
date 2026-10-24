@@ -48,6 +48,10 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    **Stuck:** if you have not moved 1 block in 3 s while it should be moving, it runs `/warp murk` (then waits for the
    teleport and carries on). After 3 warps in a row without finishing a spot it stops. Change with
    `/mudworm stuckcmd <command>`, `stucktime <seconds>` or `stuckwarp` (off).
+   **Walls and spots:** spots with a clear view are preferred. A spot is "walled in" when no landing within reach
+   has a clear line to it; those count 25 blocks further away, so they are only taken when nothing else is around
+   (grey box). The goal landing must have a clear view of the spot; only if there is none does it settle for a
+   landing within reach on the other side of a wall (the nuker still breaks through it).
 3. **Etherwarp, never through walls.** The server takes the *first* block the look ray stops at as the target, so a
    wall in the way becomes the target. The mod makes sure that first block is always the planned one:
    - **Target:** a full solid cube that is not interactable (no chest, door, trapdoor, gate, crafting table…) with

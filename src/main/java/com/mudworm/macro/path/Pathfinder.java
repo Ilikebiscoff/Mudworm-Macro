@@ -78,6 +78,9 @@ public final class Pathfinder {
     private long elapsedMs;
     private volatile String outcome = "running";
     private String endNote = "";
+    /** The goal needs a clear line of sight to the spot (first pass); false = just within reach (through walls). */
+    private boolean needLos = true;
+    private boolean lastReached;
 
     /**
      * @param startEye the real sneaking eye of the player (used for the first hop)
@@ -126,51 +129,24 @@ public final class Pathfinder {
     /** Runs the whole search. Call from the planner thread. */
     public void run() {
         long t0 = System.nanoTime();
-        long deadline = t0 + TIMEOUT_NS;
         try {
-            List<Step> steps = new ArrayList<>();
-            BlockPos feet = startFeet;
-            Vec3 eye = startEye;
-            double here = score(feet);
-            int sideways = 0;
-            boolean reached = isGoal(feet);
-            while (!reached && steps.size() < MAX_HOPS && !cancelled && System.nanoTime() < deadline) {
-                List<Cand> best = bestHops(eye, feet, steps);
-                Cand pick = null;
-                boolean side = false;
-                for (Cand cd : best) {
-                    if (!awayFromRoute(cd.target().above(), steps, 9)) continue; // never go back to where we were
-                    if (cd.score() <= here - MIN_PROGRESS) {
-                        pick = cd;
-                        break;
-                    }
+            // First look for a landing from which the spot can be SEEN (clear line, plants ignored). Only if there is
+            // none, fall back to a landing within reach on the other side of a wall (the nuker breaks through walls).
+            List<Step> steps = route(true, t0 + TIMEOUT_NS / 2);
+            boolean reached = lastReached;
+            String note = endNote;
+            if (!reached && goal.spot() != null && !cancelled) {
+                List<Step> relaxed = route(false, t0 + TIMEOUT_NS);
+                if (lastReached) {
+                    steps = relaxed;
+                    reached = true;
+                    note = " (no landing with a clear view of the spot: through a wall)";
+                } else if (steps.isEmpty()) {
+                    steps = relaxed;
+                    note = endNote;
                 }
-                if (pick == null && goal.spot() != null && sideways < MAX_SIDEWAYS) { // nothing gets closer: one real hop sideways
-                    for (Cand cd : best) {
-                        if (awayFromRoute(cd.target().above(), steps, 64) && cd.score() < here + 8) {
-                            pick = cd;
-                            side = true;
-                            break;
-                        }
-                    }
-                }
-                if (pick == null) {
-                    endNote = " (no hop gets closer, " + best.size() + " candidates)";
-                    break;
-                }
-                if (side) sideways++;
-                BlockPos land = pick.target().above();
-                steps.add(new Step(land, new Etherwarp.Shot(pick.target(), pick.yaw(), pick.pitch())));
-                hopsFound = steps.size();
-                feet = land;
-                eye = Etherwarp.eyeAt(land);
-                here = score(land);
-                reached = isGoal(land);
             }
-            if (!reached && !steps.isEmpty() && here > score(startFeet) - MIN_PROGRESS) {
-                steps.clear(); // the route does not end any closer than it started: not worth the mana
-                endNote = " (route made no progress)";
-            }
+            endNote = note;
             result = steps;
             elapsedMs = (System.nanoTime() - t0) / 1_000_000;
             if (cancelled) {
@@ -192,6 +168,57 @@ public final class Pathfinder {
         state = State.FAILED;
     }
 
+    /** One greedy route to the goal. {@code los}: the goal landing must have a clear line of sight to the spot. */
+    private List<Step> route(boolean los, long deadline) {
+        needLos = los;
+        endNote = "";
+        List<Step> steps = new ArrayList<>();
+        BlockPos feet = startFeet;
+        Vec3 eye = startEye;
+        double here = score(feet);
+        int sideways = 0;
+        boolean reached = isGoal(feet);
+        while (!reached && steps.size() < MAX_HOPS && !cancelled && System.nanoTime() < deadline) {
+            List<Cand> best = bestHops(eye, feet, steps);
+            Cand pick = null;
+            boolean side = false;
+            for (Cand cd : best) {
+                if (!awayFromRoute(cd.target().above(), steps, 9)) continue; // never go back to where we were
+                if (cd.score() <= here - MIN_PROGRESS) {
+                    pick = cd;
+                    break;
+                }
+            }
+            if (pick == null && goal.spot() != null && sideways < MAX_SIDEWAYS) { // nothing gets closer: one real hop sideways
+                for (Cand cd : best) {
+                    if (awayFromRoute(cd.target().above(), steps, 64) && cd.score() < here + 8) {
+                        pick = cd;
+                        side = true;
+                        break;
+                    }
+                }
+            }
+            if (pick == null) {
+                endNote = " (no hop gets closer, " + best.size() + " candidates)";
+                break;
+            }
+            if (side) sideways++;
+            BlockPos land = pick.target().above();
+            steps.add(new Step(land, new Etherwarp.Shot(pick.target(), pick.yaw(), pick.pitch())));
+            hopsFound = steps.size();
+            feet = land;
+            eye = Etherwarp.eyeAt(land);
+            here = score(land);
+            reached = isGoal(land);
+        }
+        if (!reached && !steps.isEmpty() && here > score(startFeet) - MIN_PROGRESS) {
+            steps.clear(); // the route does not end any closer than it started: not worth the mana
+            endNote = " (route made no progress)";
+        }
+        lastReached = reached;
+        return steps;
+    }
+
     // ---- scoring --------------------------------------------------------------------------------------------
 
     private boolean isGoal(BlockPos feet) {
@@ -202,11 +229,21 @@ public final class Pathfinder {
         return canClick(feet.getX(), feet.getY(), feet.getZ(), goal.spot());
     }
 
-    /** Standing at the cell, the spot block is within nuker reach (a little less than the setting: we land crouched). */
+    /**
+     * Standing at the cell, the spot block is within nuker reach (a little less than the setting: we land crouched),
+     * and, when {@link #needLos}, nothing solid is in the way of the view to its top or middle (plants are ignored).
+     */
     private boolean canClick(int x, int y, int z, BlockPos spot) {
         Vec3 eye = new Vec3(x + 0.5, y + 1.5, z + 0.5);
         double r = Config.reach - 0.3;
-        return eye.distanceToSqr(spot.getCenter()) <= r * r;
+        if (eye.distanceToSqr(spot.getCenter()) > r * r) return false;
+        if (!needLos) return true;
+        Vec3[] aims = {new Vec3(spot.getX() + 0.5, spot.getY() + 0.95, spot.getZ() + 0.5), spot.getCenter()};
+        for (Vec3 a : aims) {
+            BlockPos hit = Etherwarp.firstSolid(c, eye, a.subtract(eye).normalize(), eye.distanceTo(a) + 0.5);
+            if (spot.equals(hit)) return true;
+        }
+        return false;
     }
 
     /** How far a landing is from being done: distance from its eye to the goal minus the goal radius (below 0 = in reach). */

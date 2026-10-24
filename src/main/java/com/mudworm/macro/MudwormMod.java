@@ -227,7 +227,7 @@ public final class MudwormMod implements ClientModInitializer {
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
             boolean cur = M.running() && g != null && s.equals(g.spot());
             boolean bad = SpotScanner.BLACKLIST.contains(s);
-            boolean off = false;
+            boolean off = !M.isExposed(s); // walled in: only taken when nothing else is around
             int stroke = bad ? 0xFFFF4040 : off ? 0xFF808080 : cur ? 0xFFFFE030 : 0xFF30FF60;
             int fill = bad ? 0x30FF4040 : off ? 0x20808080 : cur ? 0x50FFE030 : 0x4030FF60;
             Gizmos.cuboid(s, GizmoStyle.strokeAndFill(stroke, cur ? 2.5f : 2f, fill)).setAlwaysOnTop();

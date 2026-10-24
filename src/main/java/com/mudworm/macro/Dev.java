@@ -114,8 +114,9 @@ final class Dev {
         spots.sort(Comparator.comparingDouble(s -> s.distToCenterSqr(p.position())));
         for (int i = 0; i < Math.min(8, spots.size()); i++) {
             BlockPos s = spots.get(i);
-            b.append("  ").append(s.toShortString()).append(String.format("  %.1f blocks away  strings=%d\n",
-                    Math.sqrt(s.distToCenterSqr(p.position())), SpotScanner.stringsOf(lv, s)));
+            b.append("  ").append(s.toShortString()).append(String.format("  %.1f blocks away  strings=%d  %s\n",
+                    Math.sqrt(s.distToCenterSqr(p.position())), SpotScanner.stringsOf(lv, s),
+                    m.isExposed(s) ? "clear view possible" : "WALLED IN (no landing with a clear view)"));
         }
         if (spots.isEmpty()) problems.add("no spots known: the macro can only patrol. Stand near a spot and check /mudworm spots");
 
