@@ -53,6 +53,10 @@ public final class Macro {
     /** Patrol goals further than this are pulled closer (the far end is not loaded yet). */
     private static final double MAX_GOAL_DIST = 90;
     private static final long PLAN_TIMEOUT_MS = 6000;
+    /** One break every this many client ticks (3 ticks = 150 ms). */
+    private static final int NUKE_GAP_TICKS = 3;
+    /** Do not send another break for the same spot sooner than this (waiting for the server). */
+    private static final long NUKE_RETRY_MS = 500;
     /** No spot in view for this long: run the stuck command (/warp murk) to get somewhere with spots. */
     private static final long IDLE_WARP_MS = 8000;
     /** A different spot must be at least this many blocks nearer to count (so equal distances do not flip-flop). */
@@ -112,6 +116,9 @@ public final class Macro {
 
     // digging
     private long digAt, digSince, lastSwing, idleSince;
+    // nuker: breaks ANY spot in reach, one every few ticks
+    private final Map<BlockPos, Long> nukeFirst = new HashMap<>(), nukeLast = new HashMap<>();
+    private int tickCount, lastNukeTick = -100;
     private int digTries;
     private long lastFloorDrop;
 
@@ -215,6 +222,7 @@ public final class Macro {
 
     public void tick(Minecraft mc) {
         if (!running) return;
+        tickCount++;
         long now = System.currentTimeMillis();
         LocalPlayer p = mc.player;
         if (p == null || mc.level == null || mc.gameMode == null) {
@@ -234,6 +242,8 @@ public final class Macro {
             seenResets = SpotScanner.resets;
             skipUntil.clear();
             planFails.clear();
+            nukeFirst.clear();
+            nukeLast.clear();
             patrolVisited.clear();
             avoid.clear();
         }
@@ -270,6 +280,7 @@ public final class Macro {
         skipUntil.values().removeIf(t -> t < now);
 
         terrainWait = false;
+        nukeNearby(mc, p, now);
         switch (stage) {
             case CHOOSE -> choose(mc, p, now);
             case PLAN -> plan(mc, p, now);
@@ -748,6 +759,8 @@ public final class Macro {
         if (now - digSince < DIG_LIMIT_MS) return false;
         BlockPos spot = goal.spot();
         SpotScanner.BLACKLIST.add(spot);
+        nukeFirst.remove(spot);
+        nukeLast.remove(spot);
         Chat.msg("Could not get the spot at " + spot.toShortString() + " within 2 s - blacklisted until the lobby changes.");
         release(mc);
         mc.gameMode.stopDestroyBlock();
@@ -755,7 +768,7 @@ public final class Macro {
         return true;
     }
 
-    /** Nuker: break the spot block as soon as it is in reach. No aiming, no turning the head, no line-of-sight check. */
+    /** At the final point: the nuker ({@link #nukeNearby}) does the breaking; this stage waits for the spot to be gone. */
     private void dig(Minecraft mc, LocalPlayer p, long now) {
         stopMoving(mc);
         mc.options.keyShift.setDown(false);
@@ -772,13 +785,61 @@ public final class Macro {
             return;
         }
         status = "Nuking spot";
-        mc.gameMode.startDestroyBlock(spot, Direction.UP);
+    }
+
+    /**
+     * The nuker: breaks ANY known spot within reach, not only the one we are heading for, one break every
+     * {@link #NUKE_GAP_TICKS} ticks (nearest first). No aiming, no turning the head, no line-of-sight check. A spot
+     * that is still there {@code DIG_LIMIT_MS} after the first break is blacklisted for the lobby.
+     */
+    private void nukeNearby(Minecraft mc, LocalPlayer p, long now) {
+        ClientLevel lv = mc.level;
+        if (lv == null || mc.gameMode == null || mc.screen != null) return;
+        // spots we broke that are gone now: collected
+        for (BlockPos s : new ArrayList<>(nukeFirst.keySet())) {
+            boolean gone = !SpotScanner.SPOTS.containsKey(s) || !SpotScanner.alive(lv, s) || lv.getBlockState(s).isAir();
+            if (!gone) continue;
+            nukeFirst.remove(s);
+            nukeLast.remove(s);
+            if (SpotScanner.SPOTS.containsKey(s)) {
+                spotsDone++;
+                warpsSinceSpot = 0;
+                Chat.log("Spot " + s.toShortString() + " collected");
+                SpotScanner.remove(s);
+            }
+            skipUntil.put(s, now + 30_000);
+            planFails.remove(s);
+        }
+        if (tickCount - lastNukeTick < NUKE_GAP_TICKS) return;
+        Vec3 eye = p.getEyePosition();
+        BlockPos pick = null;
+        double pickD = Double.MAX_VALUE;
+        for (BlockPos s : SpotScanner.SPOTS.keySet()) {
+            if (SpotScanner.BLACKLIST.contains(s)) continue;
+            double d = eye.distanceToSqr(s.getCenter());
+            if (d > Config.reach * Config.reach || d >= pickD) continue;
+            Long first = nukeFirst.get(s);
+            if (first != null && now - first > DIG_LIMIT_MS) { // still there long after we broke it: give up on it
+                SpotScanner.BLACKLIST.add(s);
+                nukeFirst.remove(s);
+                nukeLast.remove(s);
+                Chat.msg("Spot " + s.toShortString() + " did not break within 2 s - blacklisted until the lobby changes.");
+                continue;
+            }
+            Long last = nukeLast.get(s);
+            if (last != null && now - last < NUKE_RETRY_MS) continue; // waiting for the server
+            if (!SpotScanner.alive(lv, s)) continue; // strings gone: already used
+            pickD = d;
+            pick = s;
+        }
+        if (pick == null) return;
+        nukeFirst.putIfAbsent(pick, now);
+        nukeLast.put(pick, now);
+        mc.gameMode.startDestroyBlock(pick, Direction.UP);
         p.swing(InteractionHand.MAIN_HAND);
-        Chat.log("Nuking spot " + spot.toShortString() + " from " + p.blockPosition().toShortString()
-                + " (strings " + SpotScanner.stringsOf(mc.level, spot) + ")");
-        digAt = now;
-        digTries++;
-        stage = Stage.DIG_WAIT;
+        lastNukeTick = tickCount;
+        Chat.log("Nuking spot " + pick.toShortString() + " from " + p.blockPosition().toShortString()
+                + (goal != null && pick.equals(goal.spot()) ? " (target)" : " (other spot in reach)"));
     }
 
     /** Keeps breaking the spot block every tick until it is gone (or its strings are, or the 2 s are up). */

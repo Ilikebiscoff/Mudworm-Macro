@@ -65,11 +65,11 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    - **After the click:** it waits for the teleport, checks it landed on the planned block, then continues. Three
      warps in a row that do nothing (no mana, server refused) make it run the stuck command (`/warp murk`).
    - **Range:** 57 + the item's `tuned_transmission` (Transmission Tuners, max +4 = 61), minus a 1.5-block margin.
-4. **Nuking the spot.** Like a nuker mod it breaks the spot block as soon as it is within reach (4.6 blocks): no
-   aiming, no turning the head, no line-of-sight check. It keeps breaking the block every tick until it is gone. Success
-   is the block breaking, the strings disappearing or the `FLOOR DROP!` line. Once it is at the final point it has
-   **2 seconds** to get the spot; after that the spot is **blacklisted for this lobby** (red box) and the macro moves on.
-   The blacklist is cleared when the lobby or world changes.
+4. **Nuking: any spot in reach, not only the target.** A nuker runs the whole time: every 3 ticks (150 ms) it breaks
+   the nearest known spot within reach (4.6 blocks), whether or not it is the one being teleported to, so spots on the
+   way or next to the target go too. No aiming, no turning the head, no line-of-sight check (walls do not matter). A
+   spot counts as collected when its strings vanish or the block breaks. If a spot is still there 2 seconds after the
+   first break, it is **blacklisted for this lobby** (red box). The blacklist is cleared when the lobby or world changes.
 
 ## Requirements
 
