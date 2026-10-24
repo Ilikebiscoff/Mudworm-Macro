@@ -60,7 +60,9 @@ public final class Config {
      * game keeps their strings loaded from 100+ blocks away, and hopping towards them (or towards ones on another
      * level) looks like teleporting around for no reason.
      */
-    public static double maxTargetDistance = 50;
+    public static double maxTargetDistance = 120;
+    /** Spots more than this many blocks above or below you are ignored (other levels). */
+    public static double maxTargetHeight = 45;
     /**
      * Fewer than this many live spots in the lobby: refresh the lobby (/is, then /warp murk). 0 = never.
      * At least {@link #refreshCooldownSeconds} must have passed since the last lobby switch.
@@ -117,8 +119,9 @@ public final class Config {
         landAbove = Math.max(0, i(p, "landAbove", landAbove));
         areaMargin = Math.max(0, i(p, "areaMargin", areaMargin));
         scootRange = Math.max(0, Math.min(30, d(p, "scootRange", scootRange)));
-        maxTargetDistance = Math.max(10, Math.min(400, d(p, "maxTargetDistance", maxTargetDistance)));
-        maxTargetDistance = Math.max(10, Math.min(400, d(p, "maxTargetDistance", maxTargetDistance)));
+        maxTargetDistance = Math.max(10, Math.min(400, d(p, "maxDistance", maxTargetDistance)));
+        maxTargetDistance = Math.max(10, Math.min(400, d(p, "maxDistance", maxTargetDistance)));
+        maxTargetHeight = Math.max(5, Math.min(300, d(p, "maxHeightDiff", maxTargetHeight)));
         minSpots = Math.max(0, Math.min(50, i(p, "minSpots", minSpots)));
         refreshCooldownSeconds = Math.max(5, Math.min(600, i(p, "refreshCooldown", refreshCooldownSeconds)));
         scootSeconds = Math.max(0.2, Math.min(10, d(p, "scootSeconds", scootSeconds)));
@@ -154,8 +157,10 @@ public final class Config {
         p.setProperty("landAbove", "" + landAbove);
         p.setProperty("areaMargin", "" + areaMargin);
         p.setProperty("scootRange", "" + scootRange);
-        p.setProperty("maxTargetDistance", "" + maxTargetDistance);
-        p.setProperty("maxTargetDistance", "" + maxTargetDistance);
+        p.setProperty("maxDistance", "" + maxTargetDistance);
+        p.setProperty("maxHeightDiff", "" + maxTargetHeight);
+        p.setProperty("maxDistance", "" + maxTargetDistance);
+        p.setProperty("maxHeightDiff", "" + maxTargetHeight);
         p.setProperty("minSpots", "" + minSpots);
         p.setProperty("refreshCooldown", "" + refreshCooldownSeconds);
         p.setProperty("scootSeconds", "" + scootSeconds);

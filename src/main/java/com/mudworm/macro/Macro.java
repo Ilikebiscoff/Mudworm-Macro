@@ -564,7 +564,7 @@ public final class Macro {
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
             if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s) || !SpotScanner.alive(lv, s)) continue;
             double d = Math.sqrt(s.distToCenterSqr(p.position()));
-            if (d > Config.maxTargetDistance) continue; // too far: never hop towards it
+            if (d > Config.maxTargetDistance || Math.abs(s.getY() - p.getY()) > Config.maxTargetHeight) continue; // too far / another level
             if (!isExposed(s)) d += WALLED_PENALTY;
             if (d < bd) {
                 bd = d;
@@ -695,11 +695,18 @@ public final class Macro {
 
     private void skipGoal(long now) {
         if (goal == null) return;
-        if (goal.spot() != null) { // no way to this spot: blacklist it for the lobby so we never loop on it
-            SpotScanner.BLACKLIST.add(goal.spot());
-            nukeFirst.remove(goal.spot());
-            nukeLast.remove(goal.spot());
-            Chat.msg("No way to the spot at " + goal.spot().toShortString() + " - blacklisted until the lobby changes.");
+        if (goal.spot() != null) {
+            BlockPos sp = goal.spot();
+            int fails = planFails.merge(sp, 1, Integer::sum);
+            if (fails >= 2) { // no way twice (from two places): blacklist it for the lobby so we never loop on it
+                SpotScanner.BLACKLIST.add(sp);
+                nukeFirst.remove(sp);
+                nukeLast.remove(sp);
+                Chat.msg("No way to the spot at " + sp.toShortString() + " (2 tries) - blacklisted until the lobby changes.");
+            } else { // first time: maybe it only cannot be reached from here; pause it and try the others first
+                skipUntil.put(sp, now + 45_000);
+                Chat.debug("No way to " + sp.toShortString() + " from here - paused for 45 s, going for the next one.");
+            }
         }
         if (patrolPoint != null) skipUntil.put(patrolPoint, now + SKIP_MS);
     }
@@ -1212,13 +1219,14 @@ public final class Macro {
         int far = 0;
         for (BlockPos sp : SpotScanner.SPOTS.keySet()) {
             var pl = mc.player;
-            if (pl != null && Math.sqrt(sp.distToCenterSqr(pl.position())) > Config.maxTargetDistance) far++;
+            if (pl != null && (Math.sqrt(sp.distToCenterSqr(pl.position())) > Config.maxTargetDistance
+                    || Math.abs(sp.getY() - pl.getY()) > Config.maxTargetHeight)) far++;
         }
         b.append("live spots in lobby: ").append(mc.level == null ? 0 : liveSpots(mc.level)).append(" (refresh below ").append(Config.minSpots)
                 .append(", cooldown ").append(Config.refreshCooldownSeconds).append(" s, last switch ").append((now - lastSwitchAt) / 1000)
                 .append(" s ago, settling ").append(Math.max(0, (settleUntil - now) / 1000)).append(" s)   refreshing: ").append(refreshing)
                 .append("   refreshes in a row: ").append(refreshesInARow).append('\n');
-        b.append("max target distance: ").append(Config.maxTargetDistance).append(" blocks (").append(far).append(" known spots are farther and ignored)\n");
+        b.append("max target distance: ").append(Config.maxTargetDistance).append(" blocks, height ").append(Config.maxTargetHeight).append(" (").append(far).append(" known spots are farther and ignored)\n");
         b.append("scoot range: ").append(Config.scootRange).append(" blocks   scoot-blocked spots: ").append(scootBlocked.size()).append('\n');
         b.append("skipped spots: ").append(skipUntil.size()).append("   avoid cells: ").append(avoid.size()).append("   replans: ").append(replans).append('\n');
         b.append("done: ").append(spotsDone).append("   floor drops: ").append(floorDrops).append("   mudworm shards: ").append(shards).append('\n');

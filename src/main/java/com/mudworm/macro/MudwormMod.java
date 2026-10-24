@@ -324,7 +324,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm axe (takes the item in your hand) | axe off | axe name <text>  (use an axe for mining spots)",
                 "/mudworm blatant  (silent etherwarp aim: asks for a 2-step confirmation, off at every start)",
                 "/mudworm minspots <n> | refreshcooldown <seconds>  (fewer than n spots in the lobby: /is then /warp murk, 0 = off)",
-                "/mudworm maxdist <blocks>  (spots farther than this are never targeted, default 50)",
+                "/mudworm maxdist <blocks>  (spots farther than this are never targeted, default 120)",
                 "/mudworm scoottime <seconds> | scoot <blocks>  (walk to spots this close with WASD, 0 = off)",
                 "/mudworm hopdelay <ms>  (extra wait before each teleport, default 250)",
                 "/mudworm yband <below> <above>  (how far hops may stray up/down from the way to the spot)",

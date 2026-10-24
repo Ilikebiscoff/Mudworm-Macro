@@ -30,7 +30,7 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    watched as a second trigger. The server never sends the far side of the island, so when no spot is known the
    macro waits for one to come into view; if none shows up and you do not move for 3 s it runs the stuck command (`/warp murk`).
 2. **Going to the closest spot: etherwarp only, no walking, no route search.** It picks the nearest spot it can see is
-   alive right now and within 50 blocks (`/mudworm maxdist <blocks>`) and heads for it. Spots farther away are never
+   alive right now and within 120 blocks and 45 blocks up/down (`/mudworm maxdist <blocks>` sets the distance) and heads for it. Spots farther away are never
    targeted: the game keeps their strings loaded from 100+ blocks away, and hopping towards them (or towards ones on
    another level) just looks like teleporting around for no reason. **After every etherwarp it checks again** and, if another spot is now the nearest, switches
    to that one. It collects it, then picks the next nearest. (Spots it remembers but cannot see are not
@@ -50,7 +50,7 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    walk you off an edge); if it is blocked or makes no progress for 0.7 s it gives up and teleports instead. Change the
    range with `/mudworm scoot <blocks>` (0 = off). One scoot lasts at most 1.5 s (`/mudworm scoottime <seconds>`), and
    when it ends the "not moving for 3 s -> /warp murk" timer starts again from zero.
-   **Unreachable spots:** if no way to a spot can be found, it is blacklisted for the lobby too (red box), so the
+   **Unreachable spots:** if no way to a spot can be found, it is paused for 45 s, and if there is no way a second time it is blacklisted for the lobby (red box), so the
    macro never loops on it, also not after a `/warp murk`. When the live (non-blacklisted) spots drop below the minimum, the
    lobby refresh below gets a fresh lobby.
    **Lobby refresh:** if the lobby has fewer than 3 live spots (`/mudworm minspots <n>`, 0 = off), once its spots had
@@ -150,7 +150,7 @@ Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and 
 | `/mudworm axe off`, `axe name <text>` | Turn the axe off / set the hotbar item name by hand |
 | `/mudworm blatant`, `blatant unlock`, `blatant on <phrase>`, `blatant off` | Silent etherwarp aim without moving the camera; two-step confirmation |
 | `/mudworm minspots <n>`, `refreshcooldown <seconds>` | Fewer than n live spots in the lobby: `/is` then `/warp murk` for a new lobby (default 3, cooldown 45 s) |
-| `/mudworm maxdist <blocks>` | Spots farther than this are never targeted (default 50) |
+| `/mudworm maxdist <blocks>` | Spots farther than this are never targeted (default 120; spots more than 45 blocks above/below are ignored too) |
 | `/mudworm scoottime <seconds>` | Longest one scoot may last (default 1.5) |
 | `/mudworm hopdelay <ms>` | Extra wait before every teleport (default 250): slower hops cost less mana |
 | `/mudworm ethercost <n>` | Cost of one hop in the planner |
