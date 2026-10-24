@@ -157,6 +157,22 @@ public final class MudwormMod implements ClientModInitializer {
                         Chat.msg("Blacklist cleared.");
                         return 1;
                     })));
+            root.then(lit("home").executes(c -> {
+                var pl = Minecraft.getInstance().player;
+                if (pl != null) M.setHome(pl);
+                return 1;
+            }));
+            root.then(lit("yband")
+                    .then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("below", IntegerArgumentType.integer(0, 200))
+                            .then(RequiredArgumentBuilder.<FabricClientCommandSource, Integer>argument("above", IntegerArgumentType.integer(0, 200))
+                                    .executes(c -> {
+                                        Config.landBelow = IntegerArgumentType.getInteger(c, "below");
+                                        Config.landAbove = IntegerArgumentType.getInteger(c, "above");
+                                        Config.save();
+                                        Chat.msg("Hops and spots may be " + Config.landBelow + " blocks below to " + Config.landAbove
+                                                + " above your working level (/mudworm home sets it to where you stand).");
+                                        return 1;
+                                    }))));
             root.then(lit("sites").then(lit("clear").executes(c -> {
                 SpotScanner.clearSites();
                 Chat.msg("Forgot every remembered spot site.");
@@ -196,6 +212,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
                 "/mudworm update | update check | version",
+                "/mudworm home | yband <below> <above>  (stay on this level)",
                 "/mudworm blacklist | blacklist clear",
                 "/mudworm sites clear | reload")) Chat.msg(s);
         return 1;
@@ -207,8 +224,9 @@ public final class MudwormMod implements ClientModInitializer {
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
             boolean cur = M.running() && g != null && s.equals(g.spot());
             boolean bad = SpotScanner.BLACKLIST.contains(s);
-            int stroke = bad ? 0xFFFF4040 : cur ? 0xFFFFE030 : 0xFF30FF60;
-            int fill = bad ? 0x30FF4040 : cur ? 0x50FFE030 : 0x4030FF60;
+            boolean off = M.running() && !M.spotAllowed(s); // other level / island: ignored
+            int stroke = bad ? 0xFFFF4040 : off ? 0xFF808080 : cur ? 0xFFFFE030 : 0xFF30FF60;
+            int fill = bad ? 0x30FF4040 : off ? 0x20808080 : cur ? 0x50FFE030 : 0x4030FF60;
             Gizmos.cuboid(s, GizmoStyle.strokeAndFill(stroke, cur ? 2.5f : 2f, fill)).setAlwaysOnTop();
         }
         if (!M.running()) return;

@@ -79,6 +79,9 @@ public final class Macro {
     private BlockPos approaching;
     private final Map<BlockPos, Integer> planFails = new HashMap<>();
     private Pathfinder planner;
+    /** Y of the level we work on (set at start / /mudworm home). */
+    private int homeY;
+    private long blockedAt;
     private long planStart;
     private volatile List<Step> steps = new ArrayList<>();
     private volatile int stepIdx;
@@ -155,6 +158,7 @@ public final class Macro {
             return;
         }
         running = true;
+        homeY = (int) Math.floor(mc.player.getY());
         startLevel = mc.level;
         stage = Stage.CHOOSE;
         runStart = System.currentTimeMillis();
@@ -200,6 +204,7 @@ public final class Macro {
         String s = raw.replaceAll("§.", "");
         String lower = s.toLowerCase(Locale.ROOT);
         if (lower.contains("enough mana")) noManaUntil = System.currentTimeMillis() + 3000;
+        if (running && s.contains("There are blocks in the way")) blockedAt = System.currentTimeMillis();
         if (s.contains("FLOOR DROP!")) {
             floorDrops++;
             lastFloorDrop = System.currentTimeMillis();
@@ -376,13 +381,31 @@ public final class Macro {
         beginPlan(mc, p, now);
     }
 
+    /** Where hops may land: this level (Y band around where we started) inside the patrol area. */
+    public Pathfinder.Limits limits() {
+        int m = Config.areaMargin;
+        return new Pathfinder.Limits(homeY - Config.landBelow, homeY + Config.landAbove,
+                Config.areaMinX - m, Config.areaMaxX + m, Config.areaMinZ - m, Config.areaMaxZ + m);
+    }
+
+    /** Spots on other levels / islands / outside the area are ignored. */
+    public boolean spotAllowed(BlockPos s) {
+        return limits().contains(s.above());
+    }
+
+    /** /mudworm home: work on the level you stand on now. */
+    public void setHome(LocalPlayer p) {
+        homeY = (int) Math.floor(p.getY());
+        Chat.msg("Working level: Y " + (homeY - Config.landBelow) + ".." + (homeY + Config.landAbove) + " (you are at " + homeY + ").");
+    }
+
     /** The nearest known spot we can click right now without moving (so no teleport is spent on it), or null. */
     private BlockPos spotInReach(Minecraft mc, LocalPlayer p) {
         BlockPos best = null;
         double bd = Double.MAX_VALUE;
         Vec3 eye = p.getEyePosition();
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
-            if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s)) continue;
+            if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s) || !spotAllowed(s)) continue;
             double d = s.getCenter().distanceToSqr(eye);
             if (d > (Config.reach + 0.5) * (Config.reach + 0.5) || d >= bd) continue;
             if (clickPoint(mc.level, p, eye, s) == null) continue;
@@ -396,7 +419,7 @@ public final class Macro {
         BlockPos best = null;
         double bd = Double.MAX_VALUE;
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
-            if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s)) continue;
+            if (skipUntil.containsKey(s) || SpotScanner.BLACKLIST.contains(s) || !spotAllowed(s)) continue;
             double d = s.distToCenterSqr(p.position());
             if (d < bd) {
                 bd = d;
@@ -472,7 +495,7 @@ public final class Macro {
         Vec3 eye = new Vec3(p.getX(), p.getY() + Etherwarp.SNEAK_EYE, p.getZ());
         Chat.log("Planning from " + p.blockPosition().toShortString() + " to " + describeGoal() + ", range "
                 + String.format("%.1f", range));
-        planner = new Pathfinder(cache, p.blockPosition(), eye, goal, range, new HashSet<>(avoid));
+        planner = new Pathfinder(cache, p.blockPosition(), eye, goal, range, new HashSet<>(avoid), limits());
         exec.execute(planner::run);
         planStart = now;
         stage = Stage.PLAN;
@@ -689,8 +712,10 @@ public final class Macro {
             stage = Stage.FOLLOW;
             return;
         }
-        if (now - warpAt > WARP_TIMEOUT_MS) {
-            Chat.log("Etherwarp click did nothing for " + WARP_TIMEOUT_MS + " ms (mana? server refused?)");
+        boolean refused = blockedAt >= warpAt;
+        if (refused || now - warpAt > WARP_TIMEOUT_MS) {
+            Chat.log(refused ? "Server said \"There are blocks in the way!\" for the hop to " + shot.target().toShortString()
+                    : "Etherwarp click did nothing for " + WARP_TIMEOUT_MS + " ms (mana? server refused?)");
             mc.options.keyShift.setDown(false);
             avoid.add(shot.landing().asLong());
             if (++warpFails >= 3) {
@@ -806,6 +831,7 @@ public final class Macro {
     public String devState(Minecraft mc, long now) {
         StringBuilder b = new StringBuilder();
         b.append("running: ").append(running).append("   stage: ").append(stage).append("   status: ").append(status).append('\n');
+        b.append("working level: homeY ").append(homeY).append("  hops/spots limited to ").append(limits()).append('\n');
         b.append("goal: ").append(describeGoal()).append("   patrolPoint: ").append(patrolPoint == null ? "none" : patrolPoint.toShortString()).append('\n');
         b.append("planner: ").append(planner == null ? "idle" : planner.state() + " (" + planner.expansions() + " expansions)").append('\n');
         b.append("last plan: ").append(lastPlanReport).append('\n');
@@ -849,7 +875,7 @@ public final class Macro {
         }
         double range = Etherwarp.range(p.getInventory().getItem(slot));
         Vec3 eye = new Vec3(p.getX(), p.getY() + Etherwarp.SNEAK_EYE, p.getZ());
-        Pathfinder pf = new Pathfinder(cache, p.blockPosition(), eye, g, range, new HashSet<>());
+        Pathfinder pf = new Pathfinder(cache, p.blockPosition(), eye, g, range, new HashSet<>(), limits());
         pf.run();
         StringBuilder b = new StringBuilder();
         b.append("test goal: ").append(g.spot() != null ? "nearest spot " + g.spot().toShortString()
@@ -867,7 +893,7 @@ public final class Macro {
         BlockPos best = null;
         double bd = Double.MAX_VALUE;
         for (BlockPos s : SpotScanner.SPOTS.keySet()) {
-            if (SpotScanner.BLACKLIST.contains(s)) continue;
+            if (SpotScanner.BLACKLIST.contains(s) || !spotAllowed(s)) continue;
             double d = s.distToCenterSqr(p.position());
             if (d < bd) {
                 bd = d;

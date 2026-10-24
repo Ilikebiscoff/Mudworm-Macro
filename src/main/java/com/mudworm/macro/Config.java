@@ -44,6 +44,12 @@ public final class Config {
     public static boolean unstuckWarp = true;
     public static int stuckSeconds = 3;
     public static String stuckCommand = "warp murk";
+    /**
+     * The macro stays on the level it started on: landings and spots must be at most this many blocks below / above
+     * the Y you were at when you pressed start (or ran /mudworm home), and inside the patrol area plus a margin.
+     * This keeps it off the big trees, cliffs and floating islands above and below the Marsh.
+     */
+    public static int landBelow = 12, landAbove = 14, areaMargin = 25;
     /** Terrain snapshot radius in chunks around the player. */
     public static int cacheChunks = 7;
 
@@ -78,6 +84,9 @@ public final class Config {
         unstuckWarp = b(p, "unstuckWarp", unstuckWarp);
         stuckSeconds = Math.max(1, i(p, "stuckSeconds", stuckSeconds));
         stuckCommand = p.getProperty("stuckCommand", stuckCommand).trim();
+        landBelow = Math.max(0, i(p, "landBelow", landBelow));
+        landAbove = Math.max(0, i(p, "landAbove", landAbove));
+        areaMargin = Math.max(0, i(p, "areaMargin", areaMargin));
         cacheChunks = Math.max(2, Math.min(12, i(p, "cacheChunks", cacheChunks)));
         areaMinX = i(p, "areaMinX", areaMinX);
         areaMaxX = i(p, "areaMaxX", areaMaxX);
@@ -103,6 +112,9 @@ public final class Config {
         p.setProperty("unstuckWarp", "" + unstuckWarp);
         p.setProperty("stuckSeconds", "" + stuckSeconds);
         p.setProperty("stuckCommand", stuckCommand);
+        p.setProperty("landBelow", "" + landBelow);
+        p.setProperty("landAbove", "" + landAbove);
+        p.setProperty("areaMargin", "" + areaMargin);
         p.setProperty("cacheChunks", "" + cacheChunks);
         p.setProperty("areaMinX", "" + areaMinX);
         p.setProperty("areaMaxX", "" + areaMaxX);

@@ -37,6 +37,19 @@ public final class Pathfinder {
     /** One hop: etherwarp with {@code shot}; you end up standing on {@code feet}. */
     public record Step(BlockPos feet, Etherwarp.Shot shot) {}
 
+    /** Where hops may land: a Y band and an XZ box. Keeps the macro off other levels and islands. */
+    public record Limits(int minY, int maxY, int minX, int maxX, int minZ, int maxZ) {
+        public boolean contains(BlockPos p) {
+            return p.getY() >= minY && p.getY() <= maxY && p.getX() >= minX && p.getX() <= maxX
+                    && p.getZ() >= minZ && p.getZ() <= maxZ;
+        }
+
+        @Override
+        public String toString() {
+            return "y " + minY + ".." + maxY + ", x " + minX + ".." + maxX + ", z " + minZ + ".." + maxZ;
+        }
+    }
+
     private record Cand(double score, float yaw, float pitch, BlockPos target) {}
 
     private static final int MAX_HOPS = 14;
@@ -53,6 +66,7 @@ public final class Pathfinder {
     private final BlockPos startFeet;
     private final Vec3 startEye;
     private final Set<Long> avoid;
+    private final Limits limits;
     private volatile State state = State.RUNNING;
     private volatile boolean cancelled;
     private volatile List<Step> result = List.of();
@@ -67,14 +81,17 @@ public final class Pathfinder {
      * @param startEye the real sneaking eye of the player (used for the first hop)
      * @param range    etherwarp range for this item
      * @param avoid    landing cells that failed before
+     * @param limits   where hops may land
      */
-    public Pathfinder(WorldCache cache, BlockPos startFeet, Vec3 startEye, Goal goal, double range, Set<Long> avoid) {
+    public Pathfinder(WorldCache cache, BlockPos startFeet, Vec3 startEye, Goal goal, double range, Set<Long> avoid,
+                      Limits limits) {
         this.c = cache.reader();
         this.goal = goal;
         this.range = range;
         this.startFeet = startFeet;
         this.startEye = startEye;
         this.avoid = avoid;
+        this.limits = limits;
     }
 
     public State state() {
@@ -240,6 +257,7 @@ public final class Pathfinder {
         BlockPos hit = Etherwarp.firstStop(c, eye, Etherwarp.dir(yaw, pitch), range, false);
         if (hit == null || !Etherwarp.validTarget(c, hit.getX(), hit.getY(), hit.getZ())) return null;
         BlockPos land = hit.above();
+        if (!limits.contains(land)) return null; // another level / island: never go there
         if (!avoid.isEmpty() && avoid.contains(land.asLong())) return null;
         hits++;
         return new Cand(score(land), yaw, pitch, hit);
