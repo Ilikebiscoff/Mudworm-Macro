@@ -75,7 +75,8 @@ in-game test checklist is in [`docs/PLAN.md`](docs/PLAN.md).
    - **After the click:** it waits for the teleport, checks it landed on the planned block, then continues. Three
      warps in a row that do nothing (no mana, server refused) make it run the stuck command (`/warp murk`).
    - **Range:** 57 + the item's `tuned_transmission` (Transmission Tuners, max +4 = 61), minus a 1.5-block margin.
-   **Axe:** `/mudworm axe` toggles using an axe for mining spots; `/mudworm axe name <text>` sets which hotbar item
+   **Axe:** hold your axe and run `/mudworm axe`: it takes the name of the item in your hand and turns the axe on;
+   `/mudworm axe off` turns it off; `/mudworm axe name <text>` sets a shorter name by hand (which hotbar item
    (any item whose name contains the text, default `Helix Chopper`, not case sensitive). It is held while nuking; the Aspect of
    the Void is picked again for the next teleport.
    **Blatant mode (off at every start):** etherwarps normally turn the camera to the shot angle. In blatant mode the
@@ -135,7 +136,8 @@ Boxes: green = spot, yellow = current goal, red = blacklisted, magenta line and 
 | `/mudworm failsafe` | Stop when something else teleports you (on by default) |
 | `/mudworm range <10-61>` | Base etherwarp range (tuners from the item are added) |
 | `/mudworm scoot <blocks>` | Walk (W/A/S/D, no head turning) to spots this close instead of teleporting (default 6, 0 = off) |
-| `/mudworm axe`, `axe name <text>` | Use an axe for mining spots (toggle / hotbar item name) |
+| `/mudworm axe` | Takes the name of the item in your hand and uses it (an axe) for mining spots |
+| `/mudworm axe off`, `axe name <text>` | Turn the axe off / set the hotbar item name by hand |
 | `/mudworm blatant`, `blatant unlock`, `blatant on <phrase>`, `blatant off` | Silent etherwarp aim without moving the camera; two-step confirmation |
 | `/mudworm scoottime <seconds>` | Longest one scoot may last (default 1.5) |
 | `/mudworm hopdelay <ms>` | Extra wait before every teleport (default 250): slower hops cost less mana |

@@ -160,14 +160,31 @@ public final class MudwormMod implements ClientModInitializer {
                     })));
             root.then(lit("axe")
                     .executes(c -> {
-                        Config.useAxe = !Config.useAxe;
-                        Config.save();
+                        // take the name from the item in the hand right now, and turn the axe on
                         var pl = Minecraft.getInstance().player;
-                        Chat.msg("Axe for mining spots: " + (Config.useAxe ? "on" : "off") + " (name: '" + Config.axeName + "')");
-                        if (Config.useAxe && pl != null && Macro.slotByName(pl, Config.axeName) < 0)
-                            Chat.msg("Warning: no hotbar item with '" + Config.axeName + "' in its name. Set it with /mudworm axe name <text>.");
+                        if (pl == null) return 0;
+                        var held = pl.getInventory().getItem(pl.getInventory().getSelectedSlot());
+                        if (held.isEmpty()) {
+                            Chat.msg("Hold the axe in your hand first, then run /mudworm axe.");
+                            return 0;
+                        }
+                        if (pl.getInventory().getSelectedSlot() == Macro.aotvSlot(pl)) {
+                            Chat.msg("That is the Aspect of the Void. Hold the axe you want to mine with, then run /mudworm axe.");
+                            return 0;
+                        }
+                        Config.axeName = held.getHoverName().getString().replaceAll("§.", "").trim();
+                        Config.useAxe = true;
+                        Config.save();
+                        Chat.msg("Axe on: using '" + Config.axeName + "' (hotbar slot " + (pl.getInventory().getSelectedSlot() + 1)
+                                + ") to mine spots. /mudworm axe off turns it off, /mudworm axe name <text> sets a shorter name.");
                         return 1;
                     })
+                    .then(lit("off").executes(c -> {
+                        Config.useAxe = false;
+                        Config.save();
+                        Chat.msg("Axe off.");
+                        return 1;
+                    }))
                     .then(lit("name").then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("text",
                             StringArgumentType.greedyString()).executes(c -> {
                         Config.axeName = StringArgumentType.getString(c, "text").trim();
@@ -281,7 +298,7 @@ public final class MudwormMod implements ClientModInitializer {
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",
                 "/mudworm update | update check | version",
-                "/mudworm axe | axe name <text>  (use an axe for mining spots)",
+                "/mudworm axe (takes the item in your hand) | axe off | axe name <text>  (use an axe for mining spots)",
                 "/mudworm blatant  (silent etherwarp aim: asks for a 2-step confirmation, off at every start)",
                 "/mudworm scoottime <seconds> | scoot <blocks>  (walk to spots this close with WASD, 0 = off)",
                 "/mudworm hopdelay <ms>  (extra wait before each teleport, default 250)",
