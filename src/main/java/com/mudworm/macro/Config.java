@@ -19,10 +19,8 @@ public final class Config {
     public static int baseRange = 57;
     /** Blocks taken off the range so a target right at the edge is never tried. */
     public static double rangeMargin = 1.5;
-    /** Cost of one etherwarp in "walked blocks". Lower = teleports more, higher = walks more. */
+    /** Cost of one hop when planning (fewest hops wins). Raise it to make the planner prefer short routes. */
     public static double etherCost = 10;
-    /** Walk only, never etherwarp. */
-    public static boolean walkOnly = false;
     /** Only air lets the etherwarp ray through (plants count as blocking). Safest, finds fewer hops. */
     public static boolean strictRay = false;
     /** How far (degrees) the aim may be off and every ray in that cone must still hit the same block. */
@@ -42,8 +40,6 @@ public final class Config {
     public static boolean unstuckWarp = true;
     public static int stuckSeconds = 3;
     public static String stuckCommand = "warp murk";
-    /** Walk through azalea leaves by breaking them. */
-    public static boolean breakLeaves = true;
     /** Terrain snapshot radius in chunks around the player. */
     public static int cacheChunks = 7;
 
@@ -68,7 +64,6 @@ public final class Config {
         baseRange = i(p, "baseRange", baseRange);
         rangeMargin = d(p, "rangeMargin", rangeMargin);
         etherCost = d(p, "etherCost", etherCost);
-        walkOnly = b(p, "walkOnly", walkOnly);
         strictRay = b(p, "strictRay", strictRay);
         jitterDeg = d(p, "jitterDeg", jitterDeg);
         reach = d(p, "reach", reach);
@@ -79,7 +74,6 @@ public final class Config {
         unstuckWarp = b(p, "unstuckWarp", unstuckWarp);
         stuckSeconds = Math.max(1, i(p, "stuckSeconds", stuckSeconds));
         stuckCommand = p.getProperty("stuckCommand", stuckCommand).trim();
-        breakLeaves = b(p, "breakLeaves", breakLeaves);
         cacheChunks = Math.max(2, Math.min(12, i(p, "cacheChunks", cacheChunks)));
         areaMinX = i(p, "areaMinX", areaMinX);
         areaMaxX = i(p, "areaMaxX", areaMaxX);
@@ -95,7 +89,6 @@ public final class Config {
         p.setProperty("baseRange", "" + baseRange);
         p.setProperty("rangeMargin", "" + rangeMargin);
         p.setProperty("etherCost", "" + etherCost);
-        p.setProperty("walkOnly", "" + walkOnly);
         p.setProperty("strictRay", "" + strictRay);
         p.setProperty("jitterDeg", "" + jitterDeg);
         p.setProperty("reach", "" + reach);
@@ -106,7 +99,6 @@ public final class Config {
         p.setProperty("unstuckWarp", "" + unstuckWarp);
         p.setProperty("stuckSeconds", "" + stuckSeconds);
         p.setProperty("stuckCommand", stuckCommand);
-        p.setProperty("breakLeaves", "" + breakLeaves);
         p.setProperty("cacheChunks", "" + cacheChunks);
         p.setProperty("areaMinX", "" + areaMinX);
         p.setProperty("areaMaxX", "" + areaMaxX);

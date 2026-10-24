@@ -92,9 +92,7 @@ public final class MudwormMod implements ClientModInitializer {
             root.then(lit("esp").executes(c -> flag("Boxes", Config.esp = !Config.esp)));
             root.then(lit("hud").executes(c -> flag("Status panel", Config.hud = !Config.hud)));
             root.then(lit("debug").executes(c -> flag("Debug messages", Config.debug = !Config.debug)));
-            root.then(lit("walkonly").executes(c -> flag("Walk only (no etherwarp)", Config.walkOnly = !Config.walkOnly)));
             root.then(lit("strict").executes(c -> flag("Strict ray (only air lets the etherwarp through)", Config.strictRay = !Config.strictRay)));
-            root.then(lit("leaves").executes(c -> flag("Break azalea leaves in the way", Config.breakLeaves = !Config.breakLeaves)));
             root.then(lit("stuckwarp").executes(c -> flag("Warp when stuck", Config.unstuckWarp = !Config.unstuckWarp)));
             root.then(lit("stuckcmd").then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("command",
                     StringArgumentType.greedyString()).executes(c -> {
@@ -122,7 +120,7 @@ public final class MudwormMod implements ClientModInitializer {
                     DoubleArgumentType.doubleArg(1, 100)).executes(c -> {
                 Config.etherCost = DoubleArgumentType.getDouble(c, "blocks");
                 Config.save();
-                Chat.msg("One etherwarp now costs as much as walking " + Config.etherCost + " blocks.");
+                Chat.msg("Hop cost: " + Config.etherCost);
                 return 1;
             })));
             root.then(lit("area")
@@ -182,7 +180,7 @@ public final class MudwormMod implements ClientModInitializer {
         for (String s : List.of(
                 "/mudworm start | stop | toggle (key K)",
                 "/mudworm status | spots",
-                "/mudworm esp | hud | debug | walkonly | strict | failsafe | leaves",
+                "/mudworm esp | hud | debug | strict | failsafe",
                 "/mudworm stuckwarp | stuckcmd <command> | stucktime <seconds>",
                 "/mudworm range <10-61> | ethercost <blocks>",
                 "/mudworm area marsh | area here <radius>",

@@ -2,7 +2,6 @@ package com.mudworm.macro;
 
 import com.mudworm.macro.path.Cell;
 import com.mudworm.macro.path.Pathfinder;
-import com.mudworm.macro.path.Pathfinder.Kind;
 import com.mudworm.macro.path.Pathfinder.Step;
 import com.mudworm.macro.path.WorldCache;
 import net.minecraft.client.KeyMapping;
@@ -10,13 +9,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -32,12 +28,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * The macro: pick the nearest spot (or a patrol point when none is known), plan a walk + etherwarp path to a cell
+ * The macro: pick the nearest spot (or a patrol point when none is known), plan a chain of etherwarps to a cell
  * from which the spot can be clicked, follow it, and left-click the spot block.
  * <ul>
+ *   <li>No walking: every move is an etherwarp, chained while staying crouched.</li>
  *   <li>Planning runs on its own thread over a terrain snapshot ({@link WorldCache}), so it never lags the game.</li>
- *   <li>Walking follows a smoothed path: straight stretches are one segment, corners are cut, W stays held.</li>
- *   <li>Azalea leaves in the way are broken.</li>
  *   <li>Every 3 s it checks for a closer spot and switches to it.</li>
  *   <li>No real movement for {@link Config#stuckSeconds} s: {@link Config#stuckCommand} (default /warp murk).</li>
  * </ul>
@@ -50,7 +45,6 @@ public final class Macro {
 
     public static final Macro INSTANCE = new Macro();
 
-    private static final long STUCK_WALK_MS = 1500;
     private static final long WARP_TIMEOUT_MS = 1500;
     private static final long SKIP_MS = 60_000;
     private static final long PATROL_REVISIT_MS = 120_000;
@@ -89,10 +83,6 @@ public final class Macro {
     private final Map<BlockPos, Long> patrolVisited = new HashMap<>();
     private long lastCloserCheck;
 
-    // walking
-    private double bestDist;
-    private long progressAt;
-    private BlockPos leafTarget;
 
     // stuck / warp
     private Vec3 moveRef;
@@ -147,8 +137,9 @@ public final class Macro {
 
     public void start(Minecraft mc) {
         if (running || mc.player == null) return;
-        if (aotvSlot(mc.player) < 0 && !Config.walkOnly) {
-            Chat.msg("No Aspect of the Void with Ether Transmission in the hotbar - walking only.");
+        if (aotvSlot(mc.player) < 0) {
+            Chat.msg("Put an Aspect of the Void with Ether Transmission in your hotbar first.");
+            return;
         }
         running = true;
         startLevel = mc.level;
@@ -321,6 +312,11 @@ public final class Macro {
         release(mc);
         aim.loose();
         replans = 0;
+        if (now < etherOffUntil) {
+            terrainWait = true;
+            status = "Etherwarp not working - waiting";
+            return;
+        }
         if (!cache.has(p.blockPosition())) {
             terrainWait = true;
             status = "Scanning terrain";
@@ -421,10 +417,13 @@ public final class Macro {
     private void beginPlan(Minecraft mc, LocalPlayer p, long now) {
         cancelPlan();
         int slot = aotvSlot(p);
-        boolean ether = !Config.walkOnly && slot >= 0 && now >= etherOffUntil;
-        double range = slot >= 0 ? Etherwarp.range(p.getInventory().getItem(slot)) : 0;
+        if (slot < 0) {
+            stop(mc, "no Aspect of the Void with Ether Transmission in the hotbar");
+            return;
+        }
+        double range = Etherwarp.range(p.getInventory().getItem(slot));
         Vec3 eye = new Vec3(p.getX(), p.getY() + Etherwarp.SNEAK_EYE, p.getZ());
-        planner = new Pathfinder(cache, p.blockPosition(), eye, goal, range, ether, new HashSet<>(avoid));
+        planner = new Pathfinder(cache, p.blockPosition(), eye, goal, range, new HashSet<>(avoid));
         exec.execute(planner::run);
         planStart = now;
         stage = Stage.PLAN;
@@ -450,11 +449,8 @@ public final class Macro {
             steps = planner.result();
             stepIdx = 0;
             planner = null;
-            resetProgress(now);
             lastCloserCheck = now;
-            int hops = 0;
-            for (Step s : steps) if (s.kind() == Kind.WARP) hops++;
-            Chat.debug("Path: " + steps.size() + " steps, " + hops + " etherwarps (" + (now - planStart) + " ms)");
+            Chat.debug("Path: " + steps.size() + " etherwarps (" + (now - planStart) + " ms)");
             stage = Stage.FOLLOW;
             return;
         }
@@ -488,8 +484,10 @@ public final class Macro {
 
     // ---- following the path ---------------------------------------------------------------------------------
 
+    /** Between hops: the next hop is lined up from the current landing. */
     private void follow(Minecraft mc, LocalPlayer p, long now) {
         if (goalGone()) {
+            release(mc);
             stage = Stage.CHOOSE;
             return;
         }
@@ -499,8 +497,16 @@ public final class Macro {
             digTries = 0;
             return;
         }
+        // a closer spot showed up: go there instead
+        if (closerSpotExists(p, now)) {
+            Chat.debug("A closer spot is known - switching to it.");
+            release(mc);
+            stage = Stage.CHOOSE;
+            return;
+        }
         List<Step> list = steps;
         if (stepIdx >= list.size()) {
+            release(mc);
             if (goal.spot() != null) {
                 stage = Stage.DIG;
                 digTries = 0;
@@ -510,127 +516,11 @@ public final class Macro {
             }
             return;
         }
-        Step step = list.get(stepIdx);
-        if (step.kind() == Kind.WARP) { // we are on the cell to warp from
-            release(mc);
-            shot = step.shot();
-            prepSince = now;
-            sneakSince = 0;
-            aim.precise();
-            stage = Stage.WARP_PREP;
-            return;
-        }
-        // a closer spot showed up: go there instead (not while a warp is next, that needs a clean start)
-        boolean nextIsWarp = stepIdx + 1 < list.size() && list.get(stepIdx + 1).kind() == Kind.WARP;
-        if (!nextIsWarp && closerSpotExists(p, now)) {
-            Chat.debug("A closer spot is known - switching to it.");
-            release(mc);
-            stage = Stage.CHOOSE;
-            return;
-        }
-
-        Step next = stepIdx + 1 < list.size() ? list.get(stepIdx + 1) : null;
-        boolean last = next == null;
-        BlockPos t = step.feet();
-        double hd = Math.hypot(t.getX() + 0.5 - p.getX(), t.getZ() + 0.5 - p.getZ());
-        double dy = p.getY() - t.getY();
-        double arrive = nextIsWarp ? 0.3 : last ? 0.5 : step.kind() == Kind.WALK ? 0.9 : 0.55;
-        if (hd < arrive && Math.abs(dy) < 0.9 && (!nextIsWarp || p.onGround())) {
-            stepIdx++;
-            resetProgress(now);
-            if (nextIsWarp) release(mc);
-            return;
-        }
-
-        // leaves in the way: stop and break them
-        BlockPos leaf = leafInTheWay(mc.level, p, t, hd);
-        if (leaf != null) {
-            breakLeaf(mc, p, leaf);
-            status = "Breaking leaves";
-            progressAt = now;
-            return;
-        }
-        mc.options.keyAttack.setDown(false);
-        leafTarget = null;
-
-        if (hd < bestDist - 0.1) {
-            bestDist = hd;
-            progressAt = now;
-        } else if (now - progressAt > STUCK_WALK_MS) {
-            avoid.add(p.blockPosition().asLong());
-            avoid.add(t.asLong());
-            replan(mc, p, now, "stuck walking");
-            return;
-        }
-        status = goal.spot() != null ? "Walking to spot" : "Patrolling";
-        walkToward(mc, p, step, next, hd, nextIsWarp || last);
-    }
-
-    private void walkToward(Minecraft mc, LocalPlayer p, Step step, Step next, double hd, boolean careful) {
-        BlockPos t = step.feet();
-        Vec3 aimPt = new Vec3(t.getX() + 0.5, p.getEyeY(), t.getZ() + 0.5);
-        // start turning into the next segment before the corner, so the path is a curve, not a polyline
-        if (next != null && next.kind() == Kind.WALK && step.kind() == Kind.WALK && hd < 2.2) {
-            BlockPos n = next.feet();
-            aimPt = new Vec3(n.getX() + 0.5, p.getEyeY(), n.getZ() + 0.5);
-        }
-        float[] a = Etherwarp.angles(p.getEyePosition(), aimPt);
-        aim.setTarget(a[0], 10f, 420f, 1f);
-        float err = Math.abs(Mth.wrapDegrees(a[0] - p.getYRot()));
-        boolean forward = err < 70f && !(careful && hd < 0.3);
-        mc.options.keyUp.setDown(forward);
-        mc.options.keySprint.setDown(forward && step.kind() == Kind.WALK && !careful && hd > 2.5 && err < 15f);
-        boolean up = step.kind() == Kind.JUMP && hd < 1.5 && t.getY() > p.getY() + 0.5;
-        mc.options.keyJump.setDown(p.onGround() && (up || (p.horizontalCollision && forward)));
-        mc.options.keyShift.setDown(false);
-    }
-
-    private void resetProgress(long now) {
-        bestDist = Double.MAX_VALUE;
-        progressAt = now;
-    }
-
-    // ---- azalea leaves --------------------------------------------------------------------------------------
-
-    private static boolean isLeaf(BlockState s) {
-        return s.is(Blocks.AZALEA_LEAVES) || s.is(Blocks.FLOWERING_AZALEA_LEAVES);
-    }
-
-    /** An azalea leaf block we have to break to reach the next step (its cell, or right in front of us). */
-    private BlockPos leafInTheWay(Level level, LocalPlayer p, BlockPos t, double hd) {
-        if (!Config.breakLeaves || hd > 3.0) return null;
-        BlockPos feet = p.blockPosition();
-        // the step's own cell (feet and head height)
-        for (BlockPos c : new BlockPos[]{t, t.above()}) {
-            if (isLeaf(level.getBlockState(c)) && p.getEyePosition().distanceToSqr(c.getCenter()) < 4.5 * 4.5) return c;
-        }
-        // walking into something: the cell in front of us
-        if (p.horizontalCollision) {
-            Vec3 d = Etherwarp.dir(p.getYRot(), 0f);
-            BlockPos front = BlockPos.containing(p.getX() + d.x * 0.7, p.getY(), p.getZ() + d.z * 0.7);
-            if (!front.equals(feet)) {
-                for (BlockPos c : new BlockPos[]{front, front.above()}) {
-                    if (isLeaf(level.getBlockState(c))) return c;
-                }
-            }
-        }
-        return null;
-    }
-
-    private void breakLeaf(Minecraft mc, LocalPlayer p, BlockPos leaf) {
-        mc.options.keyUp.setDown(false);
-        mc.options.keySprint.setDown(false);
-        mc.options.keyJump.setDown(false);
-        float[] a = Etherwarp.angles(p.getEyePosition(), leaf.getCenter());
-        aim.setTarget(a[0], a[1], 700f, 1.2f);
-        if (!leaf.equals(leafTarget)) {
-            leafTarget = leaf;
-            aim.retargetFast();
-        }
-        // hold the attack button only while the crosshair is on a leaf, vanilla keeps breaking it
-        boolean onLeaf = mc.hitResult instanceof BlockHitResult bhr && bhr.getType() == HitResult.Type.BLOCK
-                && isLeaf(mc.level.getBlockState(bhr.getBlockPos()));
-        mc.options.keyAttack.setDown(onLeaf && aim.settled(p, 6f));
+        shot = list.get(stepIdx).shot();
+        prepSince = now;
+        if (!p.isShiftKeyDown()) sneakSince = 0; // already sneaking from the last hop: no need to wait for it again
+        aim.precise();
+        stage = Stage.WARP_PREP;
     }
 
     // ---- etherwarp ------------------------------------------------------------------------------------------
@@ -640,8 +530,7 @@ public final class Macro {
         stopMoving(mc);
         int slot = aotvSlot(p);
         if (slot < 0) {
-            etherOffUntil = now + 30_000;
-            replan(mc, p, now, "no Aspect of the Void in the hotbar");
+            stop(mc, "no Aspect of the Void with Ether Transmission in the hotbar");
             return;
         }
         if (p.getInventory().getSelectedSlot() != slot) {
@@ -698,8 +587,6 @@ public final class Macro {
         stopMoving(mc);
         mc.options.keyShift.setDown(true);
         if (p.position().distanceTo(warpFrom) > 1.5) { // teleported
-            mc.options.keyShift.setDown(false);
-            aim.loose();
             lastPos = p.position();
             BlockPos land = shot.landing();
             double off = Math.hypot(land.getX() + 0.5 - p.getX(), land.getZ() + 0.5 - p.getZ());
@@ -709,7 +596,10 @@ public final class Macro {
             }
             warpFails = 0;
             stepIdx++;
-            resetProgress(now);
+            if (stepIdx >= steps.size()) { // last hop: stand up and go click
+                mc.options.keyShift.setDown(false);
+                aim.loose();
+            }
             stage = Stage.FOLLOW;
             return;
         }
@@ -717,9 +607,10 @@ public final class Macro {
             mc.options.keyShift.setDown(false);
             if (++warpFails >= 3) {
                 warpFails = 0;
-                etherOffUntil = now + 20_000;
-                Chat.msg("Etherwarp did nothing 3 times (mana? item?) - walking for 20 s.");
+                etherOffUntil = now + 10_000;
+                Chat.msg("Etherwarp did nothing 3 times (mana? item?) - waiting 10 s.");
             }
+            avoid.add(shot.landing().asLong());
             replan(mc, p, now, "no teleport happened");
         }
     }

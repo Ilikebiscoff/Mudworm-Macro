@@ -17,7 +17,7 @@ An autonomous Fabric 26.1.2 client mod for Galatea that:
 | 2 | Project skeleton: Gradle/Loom 1.15, Fabric API 0.145.4+26.1.2, CI that builds and publishes the jar | done |
 | 3 | Spot detection: entity scan of string item displays (3 per block) + `happy_villager` particles, remembered sites | done |
 | 4 | Etherwarp model: item check (`ethermerge`, `tuned_transmission`), strict target rules, DDA ray, aim cone | done |
-| 5 | Pathfinder: time-sliced A* over standing cells, walking moves, lazy etherwarp moves from a per-chunk landing index | done |
+| 5 | Pathfinder: etherwarp-only A* over landing blocks on a planner thread, fed by a terrain snapshot | done |
 | 6 | Macro: state machine, walking control, sneak + verify + click warps, left-click spot, retries, skip list | done |
 | 7 | Patrol: remembered sites first, then a grid over the patrol area | done |
 | 8 | HUD, boxes, commands, settings file, safety stops | done |
@@ -48,7 +48,7 @@ Test in a quiet lobby first. Run `/mudworm debug` to see every planning step.
    the strings are still loaded.
 2. Stand within 4 blocks of a spot and `/mudworm start`: it should click without moving. Check the spot disappears
    and whether `FLOOR DROP!` appears. **If left-click does nothing, report it** (see README "Known unknowns").
-3. A spot 10–15 blocks away on flat ground: it should walk (no warp).
+3. A spot 10–15 blocks away: it should still teleport (there is no walking), one hop.
 4. A spot 40+ blocks away: magenta line, it sneaks, settles, teleports, lands on the box, then walks the rest.
 5. Put a spot behind a wall or tree: it must never warp into the wall. It should walk around, or warp to a block
    with a clear line.
